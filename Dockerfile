@@ -1,4 +1,4 @@
-FROM node:18-alpine
+FROM node:20-alpine
 
 ARG SHOPIFY_API_KEY
 ENV SHOPIFY_API_KEY=$SHOPIFY_API_KEY
@@ -21,7 +21,4 @@ WORKDIR /app/web
 RUN npx prisma generate
 
 # Run migrations and start the server
-CMD npx prisma migrate deploy && npm run serve
-
-
-
+CMD ["sh", "-c", "npx prisma migrate deploy && npm run serve"]
