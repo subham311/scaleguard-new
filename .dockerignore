@@ -1,3 +1,4 @@
+node_modules
 web/node_modules
 web/frontend/node_modules
 web/frontend/dist
@@ -6,3 +7,9 @@ web/.env
 *.sqlite
 *.sqlite-journal
 *.txt
+.git
+.shopify
+.vscode
+dist
+build
+
