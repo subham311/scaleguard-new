@@ -1,0 +1,8 @@
+web/node_modules
+web/frontend/node_modules
+web/frontend/dist
+.env
+web/.env
+*.sqlite
+*.sqlite-journal
+*.txt

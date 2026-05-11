@@ -1,0 +1,280 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Shop {
+  id                String    @id @default(uuid())
+  shopDomain        String    @unique
+  accessToken       String    // Encrypted
+  scope             String
+  installedAt       DateTime  @default(now())
+  uninstalledAt     DateTime?
+  isActive          Boolean   @default(true)
+  
+  // Billing
+  subscription      Subscription?
+  
+  // Analysis & Maturity
+  maturityLevel     String    @default("NEW") // NEW, LEARNING, STABLE, MATURE
+  lastAnalysisAt    DateTime?
+  dataCollectedAt   DateTime?
+  
+  // Relations
+  analyses          Analysis[]
+  nudges            Nudge[]
+  jobs              Job[]
+  webhooks          Webhook[]
+  products          Product[]
+  auditRuns         AuditRun[]
+  orders            Order[]
+  
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  
+  @@index([shopDomain])
+  @@index([isActive])
+  @@index([maturityLevel])
+  @@index([lastAnalysisAt])
+  @@index([createdAt])
+}
+
+model Subscription {
+  id                String    @id @default(uuid())
+  shopId            String    @unique
+  shop              Shop      @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  
+  plan              String    // LIGHT, GROWTH, PRO
+  pricingPlanId     String?
+  pricingPlan       PricingPlan? @relation(fields: [pricingPlanId], references: [id])
+  chargeId          String?   // Shopify charge ID
+  status            String    @default("PENDING") // PENDING, ACTIVE, CANCELLED, DECLINED
+  trialEndsAt       DateTime?
+  
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  
+  @@index([shopId])
+  @@index([status])
+}
+
+model Analysis {
+  id                String    @id @default(uuid())
+  shopId            String
+  shop              Shop      @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  
+  analysisType      String    // e.g., SALES_TREND, INVENTORY, CUSTOMER_BEHAVIOR
+  dataPoints        Int       // Number of data points used
+  confidenceScore   Float     // 0-100
+  meetsThreshold    Boolean   // Whether minimum threshold met
+  maturityLevel     String    // Shop maturity at time of analysis
+  
+  results           Json      // Analysis results data
+  createdAt         DateTime  @default(now())
+  
+  @@index([shopId])
+  @@index([createdAt])
+  @@index([analysisType])
+  @@index([confidenceScore])
+  @@index([shopId, createdAt])
+}
+
+model Nudge {
+  id                String    @id @default(uuid())
+  shopId            String
+  shop              Shop      @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  
+  nudgeType         String    // e.g., SCALING_OPPORTUNITY, RISK_WARNING
+  confidenceScore   Float     // 0-100
+  status            String    @default("ACTIVE") // ACTIVE, DISMISSED, ARCHIVED
+  
+  title             String
+  message           String
+  explanation       String    // "Why this is shown"
+  supportingData    Json      // Supporting signals
+  
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  
+  @@index([shopId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([nudgeType])
+  @@index([shopId, status])
+  @@index([shopId, createdAt])
+}
+
+model Job {
+  id                String    @id @default(uuid())
+  shopId            String?
+  shop              Shop?     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  jobType           String    // WEEKLY_ANALYSIS, DATA_SYNC, etc.
+  status            String    @default("PENDING") // PENDING, PROCESSING, COMPLETED, FAILED
+  error             String?
+  metadata          Json?
+  
+  startedAt         DateTime?
+  completedAt       DateTime?
+  createdAt         DateTime  @default(now())
+  
+  @@index([shopId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([jobType])
+  @@index([shopId, status])
+  @@index([shopId, createdAt])
+}
+
+model Webhook {
+  id                String    @id @default(uuid())
+  shopId            String?
+  shop              Shop?     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  topic             String    // app/uninstalled, charges/confirm, etc.
+  payload           Json
+  processed         Boolean   @default(false)
+  
+  createdAt         DateTime  @default(now())
+  
+  @@index([shopId])
+  @@index([topic])
+  @@index([processed])
+  @@index([shopId, topic])
+  @@index([createdAt])
+}
+
+model Product {
+  id                String    @id @default(uuid())
+  shopId            String
+  shop              Shop      @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  shopifyId         String    @unique
+  title             String
+  description       String?
+  imageCount        Int       @default(0)
+  collectionIds     Json?
+  
+  variants          Variant[]
+  performance       PerformanceMetric?
+  
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  
+  @@index([shopId])
+  @@index([shopifyId])
+}
+
+model Variant {
+  id                String    @id @default(uuid())
+  productId         String
+  product           Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  shopifyId         String    @unique
+  title             String
+  price             Float?
+  inventory         Int       @default(0)
+  
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  
+  @@index([productId])
+  @@index([shopifyId])
+}
+
+model AuditRun {
+  id                String    @id @default(uuid())
+  shopId            String
+  shop              Shop      @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  
+  status            String    @default("PENDING") // PENDING, PROCESSING, COMPLETED, FAILED
+  startedAt         DateTime?
+  completedAt       DateTime?
+  
+  issues            Issue[]
+  
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  
+  @@index([shopId])
+  @@index([status])
+}
+
+model Issue {
+  id                String    @id @default(uuid())
+  auditRunId        String
+  auditRun          AuditRun  @relation(fields: [auditRunId], references: [id], onDelete: Cascade)
+  
+  type              String    // E.g., PRICING_ERROR, MISSING_DESCRIPTION, NO_IMAGES, CATALOG_INCONSISTENCY
+  severity          Severity
+  category          String    // E.g., PRICING, CONTENT, INVENTORY
+  affectedEntities  Json      // Array of variant/product IDs
+  evidence          Json      // Raw triggering data
+  
+  createdAt         DateTime  @default(now())
+  
+  @@index([auditRunId])
+  @@index([severity])
+  @@index([type])
+}
+
+enum Severity {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+}
+
+
+model PricingPlan {
+  id                String   @id @default(uuid())
+  name              String   @unique // Light, Growth, Pro
+  price             Float
+  description       String
+  maxProducts       Int
+  imagesPerProduct  Int
+  auditType         String   // BASIC, FULL, DEEPER
+  scanFrequency     String   // WEEKLY, CONTINUOUS, FASTER
+  features          Json     // Array of strings to show on the UI
+  isPopular         Boolean  @default(false)
+  isActive          Boolean  @default(true)
+  
+  subscriptions     Subscription[]
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model Order {
+  id                String    @id @default(uuid())
+  shopId            String
+  shop              Shop      @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  shopifyId         String    @unique
+  orderNumber       String
+  totalPrice        Float
+  currency          String
+  status            String
+  orderedAt         DateTime
+  
+  createdAt         DateTime  @default(now())
+  
+  @@index([shopId])
+  @@index([orderedAt])
+}
+
+model PerformanceMetric {
+  id                String    @id @default(uuid())
+  productId         String    @unique
+  product           Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  
+  totalSales        Float     @default(0)
+  totalQuantity     Int       @default(0)
+  orderCount        Int       @default(0)
+  
+  updatedAt         DateTime  @updatedAt
+  
+  @@index([productId])
+}
