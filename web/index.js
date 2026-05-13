@@ -25,6 +25,10 @@ import { seedPricingPlans } from './backend/jobs/seedPricingPlans.js';
 import { errorHandler, notFoundHandler } from './backend/middleware/errorHandler.js';
 import { processDataSync } from './backend/jobs/processors/dataSync.js';
 import { processAuditRun } from './backend/jobs/processors/auditEngine.js';
+
+import dotenv from 'dotenv';
+
+dotenv.config();
 // ----------------------------
 
 const PORT = parseInt(
