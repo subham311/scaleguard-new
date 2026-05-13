@@ -6,11 +6,11 @@
   "scripts": {
     "shopify": "npx shopify",
     "build": "npx shopify app build",
-    "dev-local": "npx shopify app dev",
+    "start": "npx shopify app dev",
     "info": "npx shopify app info",
     "generate": "npx shopify app generate",
     "deploy": "npx shopify app deploy",
-    "start": "npm run serve --workspace=web"
+    "dev": "npm run serve --workspace=web"
   },
   "dependencies": {},
   "author": "Subham Samanta",
