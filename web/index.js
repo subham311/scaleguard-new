@@ -44,6 +44,9 @@ const STATIC_PATH =
     ? join(__dirname, "frontend", "dist")
     : join(__dirname, "frontend");
 
+console.log('STATIC_PATH------------------------', STATIC_PATH);
+console.log('ENVIRONMENT------------------------', process.env.NODE_ENV);
+
 const app = express();
 
 // Set up Shopify authentication and webhook handling
