@@ -4,12 +4,12 @@
   "main": "web/index.js",
   "license": "UNLICENSED",
   "scripts": {
-    "shopify": "shopify",
-    "build": "shopify app build",
-    "dev": "shopify app dev",
-    "info": "shopify app info",
-    "generate": "shopify app generate",
-    "deploy": "shopify app deploy"
+    "shopify": "npx shopify",
+    "build": "npx shopify app build",
+    "dev": "npx shopify app dev",
+    "info": "npx shopify app info",
+    "generate": "npx shopify app generate",
+    "deploy": "npx shopify app deploy"
   },
   "dependencies": {},
   "author": "Subham Samanta",
