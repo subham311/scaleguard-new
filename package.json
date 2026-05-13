@@ -6,7 +6,7 @@
   "scripts": {
     "shopify": "npx shopify",
     "build": "npx shopify app build",
-    "dev": "npx shopify app dev",
+    "dev-local": "npx shopify app dev",
     "info": "npx shopify app info",
     "generate": "npx shopify app generate",
     "deploy": "npx shopify app deploy",
