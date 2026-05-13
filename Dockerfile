@@ -22,4 +22,4 @@ WORKDIR /app/web
 RUN npx prisma generate
 
 # Run migrations and start the server
-CMD ["sh", "-c", "npx prisma migrate deploy && npm run serve"]
+CMD ["sh", "-c", "npx prisma migrate deploy && npm start"]

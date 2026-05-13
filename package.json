@@ -9,7 +9,8 @@
     "dev": "npx shopify app dev",
     "info": "npx shopify app info",
     "generate": "npx shopify app generate",
-    "deploy": "npx shopify app deploy"
+    "deploy": "npx shopify app deploy",
+    "start": "npm run serve --workspace=web"
   },
   "dependencies": {},
   "author": "Subham Samanta",
