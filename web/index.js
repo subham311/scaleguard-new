@@ -1,6 +1,7 @@
 // @ts-check
-import { join } from "path";
+import { join, dirname } from "path";
 import { readFileSync } from "fs";
+import { fileURLToPath } from "url";
 import express from "express";
 import serveStatic from "serve-static";
 
@@ -31,10 +32,13 @@ const PORT = parseInt(
   10
 );
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
 const STATIC_PATH =
   process.env.NODE_ENV === "production"
-    ? `${process.cwd()}/frontend/dist`
-    : `${process.cwd()}/frontend/`;
+    ? join(__dirname, "frontend", "dist")
+    : join(__dirname, "frontend");
 
 const app = express();
 

@@ -12,8 +12,9 @@ COPY . .
 # Install all dependencies (handles root and workspaces)
 RUN npm install
 
-# Build the app using Shopify CLI
-RUN npx shopify app build
+# Build the app
+ENV NODE_ENV=production
+RUN npm run build
 
 
 # Generate Prisma client inside the web folder
