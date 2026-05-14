@@ -176,6 +176,25 @@ export default function Dashboard() {
     setExpandedIssues((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
+  const status = data?.subscription?.status;
+  const verdict = data?.verdict || "Waiting for Sync";
+  const scores = data?.scores || { productDataQuality: 0, visualTrust: 0, catalogConsistency: 0, conversionReadiness: 0 };
+  const scoreExplanations = data?.scoreExplanations || {};
+  const issues = data?.issues || [];
+  const products = data?.products || [];
+  const shopDomain = data?.shop?.domain || "";
+  const isFeatureLocked = data?.plan === "LIGHT" && false;
+
+  const filteredProducts = useMemo(() => {
+    return products.filter((p) => {
+      const matchesSearch = p.title.toLowerCase().includes(searchValue.toLowerCase());
+      const matchesSeverity = severityFilter === "ALL" || p.severity === severityFilter;
+      return matchesSearch && matchesSeverity;
+    });
+  }, [products, searchValue, severityFilter]);
+
+  const verdictCfg = VERDICT_CONFIG[verdict] || VERDICT_CONFIG["Waiting for Sync"];
+
   /* ── Loading State ── */
   if (isLoading) {
     return (
@@ -192,31 +211,37 @@ export default function Dashboard() {
     );
   }
 
-  const status = data?.subscription?.status;
   if (status !== "ACTIVE" && status !== "PENDING") return null;
 
-  const verdict = data?.verdict || "Waiting for Sync";
-  const scores = data?.scores || { productDataQuality: 0, visualTrust: 0, catalogConsistency: 0, conversionReadiness: 0 };
-  const issues = data?.issues || [];
-  const products = data?.products || [];
-  const shopDomain = data?.shop?.domain || "";
-  const isFeatureLocked = data?.plan === "LIGHT" && false;
-
-  const filteredProducts = useMemo(() => {
-    return products.filter((p) => {
-      const matchesSearch = p.title.toLowerCase().includes(searchValue.toLowerCase());
-      const matchesSeverity = severityFilter === "ALL" || p.severity === severityFilter;
-      return matchesSearch && matchesSeverity;
-    });
-  }, [products, searchValue, severityFilter]);
-
-  const verdictCfg = VERDICT_CONFIG[verdict] || VERDICT_CONFIG["Waiting for Sync"];
-
   const scoreMetrics = [
-    { label: "Data Quality",  score: scores.productDataQuality,   color: "#5C6AC4", icon: "◈" },
-    { label: "Visual Trust",  score: scores.visualTrust,           color: "#00A3BF", icon: "◉" },
-    { label: "Consistency",   score: scores.catalogConsistency,    color: "#00B779", icon: "◆" },
-    { label: "Readiness",     score: scores.conversionReadiness,   color: "#637381", icon: "◎" },
+    {
+      label: "Data Quality",
+      score: scores.productDataQuality,
+      color: "#5C6AC4",
+      icon: "◈",
+      explanation: scoreExplanations?.dataQuality?.explanation || null,
+    },
+    {
+      label: "Visual Trust",
+      score: scores.visualTrust,
+      color: "#00A3BF",
+      icon: "◉",
+      explanation: scoreExplanations?.visualTrust?.explanation || null,
+    },
+    {
+      label: "Consistency",
+      score: scores.catalogConsistency,
+      color: "#00B779",
+      icon: "◆",
+      explanation: scoreExplanations?.consistency?.explanation || null,
+    },
+    {
+      label: "Readiness",
+      score: scores.conversionReadiness,
+      color: "#637381",
+      icon: "◎",
+      explanation: scoreExplanations?.readiness?.explanation || null,
+    },
   ];
 
   return (
@@ -235,10 +260,10 @@ export default function Dashboard() {
           <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: "16px" }}>
             <div>
               <h1 style={{ margin: 0, fontSize: "22px", fontWeight: 700, color: colors.textPrimary, letterSpacing: "-0.3px" }}>
-                Store Audit &amp; Readiness Engine
+                Commercial Risk Intelligence
               </h1>
               <p style={{ margin: "4px 0 0", fontSize: "14px", color: colors.textSecondary }}>
-                Monitor catalog health and resolve issues before scaling.
+                Identify commercial risk signals and resolve issues before scaling ad spend.
               </p>
             </div>
           </div>
@@ -310,14 +335,27 @@ export default function Dashboard() {
           {/* ── 2. Health Score Cards ── */}
           <Layout.Section>
             <SectionLabel>Catalog Health Overview</SectionLabel>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: "14px" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "14px" }}>
               {scoreMetrics.map((metric) => (
                 <Card key={metric.label} hover style={{ padding: "20px 16px" }}>
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "10px" }}>
                     <ScoreRing score={metric.score} color={metric.color} />
                     <div style={{ textAlign: "center" }}>
                       <div style={{ fontSize: "13px", fontWeight: 600, color: colors.textPrimary }}>{metric.label}</div>
-                      <div style={{ fontSize: "11px", color: colors.textMuted, marginTop: "2px" }}>Catalog metric</div>
+                      {metric.explanation ? (
+                        <div style={{
+                          fontSize: "11px",
+                          color: colors.textMuted,
+                          marginTop: "6px",
+                          lineHeight: "1.5",
+                          textAlign: "center",
+                          maxWidth: "160px",
+                        }}>
+                          {metric.explanation}
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: "11px", color: colors.textMuted, marginTop: "2px" }}>Catalog metric</div>
+                      )}
                     </div>
                   </div>
                 </Card>
@@ -406,15 +444,14 @@ export default function Dashboard() {
                               overflow: "hidden",
                             }}>
                               {/* Sub-header */}
-                              <div style={{
-                                padding: "10px 16px",
+                              <div style={{ padding: "10px 16px",
                                 borderBottom: `1px solid ${colors.border}`,
                                 display: "flex", alignItems: "center", justifyContent: "space-between",
                               }}>
                                 <span style={{ fontSize: "12px", fontWeight: 600, color: colors.textSecondary, textTransform: "uppercase", letterSpacing: "0.05em" }}>
                                   Affected Products ({items?.length ?? affectedProductTitles.length})
                                 </span>
-                                <span style={{ fontSize: "11px", color: colors.textMuted }}>Click a product to edit in Shopify</span>
+                                <span style={{ fontSize: "11px", color: colors.textMuted }}>Click a product to fix in Shopify</span>
                               </div>
 
                               {/* Scrollable product list */}
@@ -460,7 +497,7 @@ export default function Dashboard() {
                                           fontSize: "11px", color: colors.accent, fontWeight: 600,
                                           flexShrink: 0, marginLeft: "12px",
                                         }}>
-                                          Edit
+                                          Fix in Shopify
                                           <span style={{ fontSize: "14px", lineHeight: 1 }}>→</span>
                                         </span>
                                       )}

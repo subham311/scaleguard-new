@@ -6,15 +6,17 @@ const pricingPlans = [
   {
     name: 'Light',
     price: 19,
-    description: 'Essential audit checks for new stores getting started.',
+    description: 'Essential commercial risk checks for new stores getting started.',
     maxProducts: 20,
     imagesPerProduct: 2,
     auditType: 'BASIC',
     scanFrequency: 'WEEKLY',
     features: [
-      'Basic catalog audit',
-      'Weekly sync',
-      'Top 5 issues flagged',
+      'Up to 20 products analyzed per audit',
+      '2 images analyzed per product',
+      'Basic catalog audit (pricing, descriptions, images)',
+      'Weekly sync & risk scan',
+      'Top 5 risk issues flagged',
       'Standard support'
     ],
     isPopular: false,
@@ -23,16 +25,18 @@ const pricingPlans = [
   {
     name: 'Growth',
     price: 49,
-    description: 'Advanced checks and priority fixes to scale fast.',
+    description: 'Advanced commercial risk detection and priority fixes to scale fast.',
     maxProducts: 75,
     imagesPerProduct: 3,
     auditType: 'FULL',
     scanFrequency: 'CONTINUOUS',
     features: [
-      'Advanced catalog & visual audit',
-      'Daily sync',
+      'Up to 75 products analyzed per audit',
+      '3 images analyzed per product',
+      'Continuous delta-monitoring',
+      'Inventory anomaly detection (lazy imports, ghost listings)',
+      'Niche consistency & fragmentation checks',
       'Priority fix recommendations',
-      'Smart insights',
       'Priority support'
     ],
     isPopular: true,
@@ -41,15 +45,19 @@ const pricingPlans = [
   {
     name: 'Pro',
     price: 99,
-    description: 'Full-suite readiness engine for high-volume merchants.',
+    description: 'Full-suite commercial intelligence engine for high-volume merchants.',
     maxProducts: 200,
     imagesPerProduct: 4,
     auditType: 'DEEPER',
     scanFrequency: 'FASTER',
     features: [
-      'Real-time audit engine',
-      'Custom rule configurations',
-      'Product-level drilldown'
+      'Up to 200 products analyzed per audit',
+      '4 images analyzed per product',
+      'Deeper commercial risk audit',
+      'Price positioning & variance intelligence',
+      'Performance-layer risk detection',
+      'Product-level drilldown',
+      'Dedicated support'
     ],
     isPopular: false,
     isActive: true

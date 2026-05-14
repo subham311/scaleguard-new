@@ -637,8 +637,8 @@ router.post('/create-charge', authenticateShop, async (req, res) => {
     
     const trimmedToken = accessToken.trim();
     /* 
-    // BYPASSING SHOPIFY BILLING API FOR MILESTONE 1
-    // This part is bypassed as requested to focus on core functionality
+    // BYPASSING SHOPIFY BILLING API DUE TO 422 ERROR
+    // "It appears that this application is currently owned by a Shop..."
     const chargeResponse = await fetch(chargeUrl, {
       method: 'POST',
       headers: {
@@ -649,7 +649,6 @@ router.post('/create-charge', authenticateShop, async (req, res) => {
     });
 
     const responseText = await chargeResponse.text();
-    // ... handle response ...
     */
 
     // SIMULATED SUCCESS: Update local database directly

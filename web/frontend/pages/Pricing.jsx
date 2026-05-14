@@ -13,6 +13,32 @@ import { useBilling } from "../hooks/useBilling";
 import { usePricingPlans } from "../hooks/usePricingPlans";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { useNavigate } from "react-router-dom";
+import { useQuery } from "react-query";
+
+// Static limit metadata per plan name — displayed in pricing cards
+const PLAN_LIMITS_META = {
+  Light: {
+    badge: 'Starter',
+    productsLabel: 'Up to 20 products analyzed',
+    imagesLabel: '2 images analyzed per product',
+    auditLabel: 'Basic catalog audit',
+    rank: 1,
+  },
+  Growth: {
+    badge: 'Most Popular',
+    productsLabel: 'Up to 75 products analyzed',
+    imagesLabel: '3 images analyzed per product',
+    auditLabel: 'Continuous delta-monitoring',
+    rank: 2,
+  },
+  Pro: {
+    badge: 'Enterprise',
+    productsLabel: 'Up to 200 products analyzed',
+    imagesLabel: '4 images analyzed per product',
+    auditLabel: 'Deeper commercial risk audit',
+    rank: 3,
+  },
+};
 
 export default function Pricing() {
   const shopify = useAppBridge();
@@ -20,6 +46,16 @@ export default function Pricing() {
   const [selectedPlanName, setSelectedPlanName] = useState(null);
   const { mutate: createCharge, isLoading: isCreatingCharge } = useBilling();
   const { data: plans, isLoading: isLoadingPlans, isError } = usePricingPlans();
+
+  const { data: subscription, isLoading: isLoadingSubscription } = useQuery({
+    queryKey: ["subscription"],
+    queryFn: async () => {
+      const response = await fetch("/v1/billing/subscription");
+      if (!response.ok) return null;
+      return response.json();
+    },
+    refetchOnWindowFocus: false,
+  });
 
   const handleSelectPlan = (planName) => {
     setSelectedPlanName(planName);
@@ -51,7 +87,7 @@ export default function Pricing() {
     </svg>
   );
 
-  if (isLoadingPlans) {
+  if (isLoadingPlans || isLoadingSubscription) {
     return (
       <Page>
         <div style={{ display: "flex", justifyContent: "center", alignItems: "center", height: "50vh" }}>
@@ -72,13 +108,19 @@ export default function Pricing() {
     );
   }
 
+  // Get current active plan name mapped to capital case equivalent of UI representation (e.g. LIGHT -> Light)
+  const activePlanKey = subscription?.status === 'ACTIVE' || subscription?.status === 'PENDING'
+    ? (subscription?.plan?.charAt(0).toUpperCase() + subscription?.plan?.slice(1).toLowerCase())
+    : null;
+  const currentRank = activePlanKey ? PLAN_LIMITS_META[activePlanKey]?.rank || 0 : 0;
+
   return (
     <Page>
       <div style={{ textAlign: "center", marginTop: "40px", marginBottom: "48px" }}>
-        <Text as="h1" variant="heading3xl">Simple, transparent pricing</Text>
+        <Text as="h1" variant="heading3xl">Commercial Risk Intelligence Plans</Text>
         <div style={{ marginTop: "16px", maxWidth: "600px", margin: "16px auto 0" }}>
           <Text as="p" variant="bodyLg" tone="subdued">
-            Choose the right ScaleGuard plan for your store's readiness. Simple pricing, no hidden fees.
+            Each plan controls how many products and images ScaleGuard analyzes per audit cycle.
           </Text>
         </div>
       </div>
@@ -94,7 +136,25 @@ export default function Pricing() {
         flexWrap: "wrap",
         paddingBottom: "60px"
       }}>
-        {plans.map((plan) => (
+        {plans.map((plan) => {
+          const meta = PLAN_LIMITS_META[plan.name] || {};
+          const planRank = meta.rank || 0;
+          
+          let buttonText = `Select ${plan.name}`;
+          let isCurrentPlan = false;
+          
+          if (currentRank > 0) {
+            if (planRank > currentRank) {
+              buttonText = `Upgrade to ${plan.name}`;
+            } else if (planRank < currentRank) {
+              buttonText = `Downgrade to ${plan.name}`;
+            } else {
+              buttonText = "Current Plan";
+              isCurrentPlan = true;
+            }
+          }
+
+          return (
           <div key={plan.id} style={{
             flex: "1 1 300px",
             maxWidth: "320px",
@@ -118,17 +178,45 @@ export default function Pricing() {
             <div style={{ marginTop: "8px", minHeight: "48px" }}>
               <Text as="p" variant="bodyMd" tone="subdued">{plan.description}</Text>
             </div>
+
+            {/* ── Operational Limits Badge ── */}
+            {meta.productsLabel && (
+              <div style={{
+                marginTop: "12px",
+                padding: "10px 14px",
+                borderRadius: "8px",
+                background: "var(--p-color-bg-surface-secondary)",
+                border: "1px solid var(--p-color-border)",
+                display: "flex",
+                flexDirection: "column",
+                gap: "6px",
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", fontWeight: 600 }}>
+                  <span style={{ fontSize: "14px" }}>📦</span>
+                  <span>{meta.productsLabel}</span>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", fontWeight: 600 }}>
+                  <span style={{ fontSize: "14px" }}>🖼</span>
+                  <span>{meta.imagesLabel}</span>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", fontWeight: 600 }}>
+                  <span style={{ fontSize: "14px" }}>🔍</span>
+                  <span>{meta.auditLabel}</span>
+                </div>
+              </div>
+            )}
+
             <div style={{ margin: "24px 0" }}>
               <Text as="h3" variant="heading3xl">${plan.price} <span style={{ fontSize: "16px", fontWeight: "normal", color: "var(--p-color-text-subdued)" }}>/mo</span></Text>
             </div>
             <Button 
-              primary={plan.isPopular} 
+              primary={plan.isPopular && !isCurrentPlan} 
               fullWidth 
               onClick={() => handleSelectPlan(plan.name)} 
               loading={isCreatingCharge && selectedPlanName === plan.name}
-              disabled={isCreatingCharge && selectedPlanName !== plan.name}
+              disabled={isCurrentPlan || (isCreatingCharge && selectedPlanName !== plan.name)}
             >
-              Select {plan.name}
+              {buttonText}
             </Button>
             
             <div style={{ height: "1px", backgroundColor: "var(--p-color-border)", margin: "24px 0" }} />
@@ -142,9 +230,9 @@ export default function Pricing() {
               ))}
             </ul>
           </div>
-        ))}
+          );
+        })}
       </div>
     </Page>
   );
 }
-

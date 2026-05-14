@@ -8,15 +8,32 @@ const JOB_TYPES = {
 };
 
 /**
- * Schedule weekly analysis jobs
- * Runs every Monday at 2 AM UTC
+ * Schedule background jobs based on subscription plan frequency
  */
 export function startScheduler() {
-  console.log('📅 Starting job scheduler...');
+  console.log('📅 Starting tier-based job scheduler...');
 
-  // Weekly analysis job - Every Monday at 2 AM UTC
+  // 1. Hourly: 'FASTER' (PRO Plan) - "Real-time audit engine"
+  // Runs at the top of every hour
+  cron.schedule('0 * * * *', async () => {
+    console.log('⏰ Hourly scheduler triggered (FASTER scan frequency)');
+    await scheduleDataSyncs('FASTER');
+  });
+
+  // 2. Daily: 'CONTINUOUS' (GROWTH Plan) - "Daily sync"
+  // Runs every day at 1 AM UTC
+  cron.schedule('0 1 * * *', async () => {
+    console.log('⏰ Daily scheduler triggered (CONTINUOUS scan frequency)');
+    await scheduleDataSyncs('CONTINUOUS');
+  });
+
+  // 3. Weekly: 'WEEKLY' (LIGHT Plan or Fallback) - "Weekly sync"
+  // Runs every Monday at 2 AM UTC
   cron.schedule('0 2 * * 1', async () => {
-    console.log('⏰ Weekly analysis job triggered');
+    console.log('⏰ Weekly scheduler triggered (WEEKLY scan frequency)');
+    await scheduleDataSyncs('WEEKLY');
+    
+    // Also run the legacy weekly analysis for all active shops
     await scheduleWeeklyAnalysis();
   });
 
@@ -26,7 +43,65 @@ export function startScheduler() {
     await scheduleCleanup();
   });
 
-  console.log('✅ Job scheduler started');
+  console.log('✅ Tier-based job scheduler started');
+}
+
+/**
+ * Schedule DATA_SYNC for shops matching the target frequency.
+ * Note: cronWorker automatically chains AUDIT_RUN after successful DATA_SYNC.
+ */
+async function scheduleDataSyncs(targetFrequency) {
+  try {
+    const activeShops = await prisma.shop.findMany({
+      where: { isActive: true },
+      include: {
+        subscription: {
+          include: { pricingPlan: true }
+        },
+      },
+    });
+
+    let scheduledCount = 0;
+
+    for (const shop of activeShops) {
+      if (shop.subscription && shop.subscription.status === 'ACTIVE') {
+        const plan = shop.subscription.pricingPlan;
+        
+        // Default to WEEKLY if no plan is specified
+        const frequency = plan?.scanFrequency || 'WEEKLY';
+
+        if (frequency === targetFrequency) {
+          // Check if there is already a pending sync job to prevent duplicates
+          const existingJob = await prisma.job.findFirst({
+            where: {
+              shopId: shop.id,
+              jobType: JOB_TYPES.DATA_SYNC,
+              status: 'PENDING'
+            }
+          });
+
+          if (!existingJob) {
+            await prisma.job.create({
+              data: {
+                shopId: shop.id,
+                jobType: JOB_TYPES.DATA_SYNC,
+                status: 'PENDING',
+                metadata: {
+                  scheduledAt: new Date().toISOString(),
+                  trigger: `SCHEDULER_${targetFrequency}`
+                },
+              },
+            });
+            scheduledCount++;
+          }
+        }
+      }
+    }
+
+    console.log(`✅ Scheduled DATA_SYNC for ${scheduledCount} shop(s) on ${targetFrequency} frequency.`);
+  } catch (error) {
+    console.error(`❌ Error scheduling ${targetFrequency} syncs:`, error);
+  }
 }
 
 /**
