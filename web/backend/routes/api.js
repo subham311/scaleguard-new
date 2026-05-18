@@ -103,22 +103,37 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
       // Calculate deductions
       const criticalIssues = issues.filter(i => i.severity === 'CRITICAL');
       const pricingIssues = issues.filter(i => i.type === 'PRICING_ERROR');
+      const titleIssues = issues.filter(i => ['INVALID_PRODUCT_TITLE', 'WEAK_PRODUCT_TITLE'].includes(i.type));
       const descIssues = issues.filter(i =>
-        i.type === 'MISSING_DESCRIPTION' || i.type === 'WEAK_DESCRIPTION'
+        ['MISSING_DESCRIPTION', 'WEAK_DESCRIPTION', 'GENERIC_DESCRIPTION'].includes(i.type)
       );
-      const imageIssues = issues.filter(i => i.type === 'LOW_IMAGE_COUNT');
+      const noImageIssues = issues.filter(i => i.type === 'NO_PRODUCT_IMAGES');
+      const imageIssues = issues.filter(i => ['NO_PRODUCT_IMAGES', 'LOW_IMAGE_COUNT', 'EXCESSIVE_IMAGE_COUNT'].includes(i.type));
       const consistencyIssues = issues.filter(i =>
-        ['CATALOG_INCONSISTENCY', 'HIGH_FRAGMENTATION', 'INCONSISTENT_PRICE_POSITIONING'].includes(i.type)
+        ['CATALOG_INCONSISTENCY', 'HIGH_FRAGMENTATION', 'INCONSISTENT_PRICE_POSITIONING', 'VARIANT_PRICE_GAP', 'COLLECTION_PRICE_OUTLIER'].includes(i.type)
       );
       const perfRiskIssues = issues.filter(i => i.type === 'HIGH_PERFORMANCE_LOW_QUALITY');
       const inventoryIssues = issues.filter(i =>
-        ['LAZY_INVENTORY', 'UNIFORM_INVENTORY', 'GHOST_LISTING'].includes(i.type)
+        ['LAZY_INVENTORY', 'UNIFORM_INVENTORY', 'GHOST_LISTING', 'UNREALISTIC_INVENTORY'].includes(i.type)
       );
       const deadInventoryIssues = issues.filter(i => i.type === 'DEAD_INVENTORY');
 
-      // Category Scoring
-      scores.productDataQuality = Math.max(0, 100 - (pricingIssues.length * 15) - (descIssues.length * 5));
-      scores.visualTrust = Math.max(0, 100 - (imageIssues.length * 20));
+      // Category Scoring (Phase 2 tiered)
+      scores.productDataQuality = Math.max(0,
+        100
+        - (pricingIssues.length * 15)
+        - (titleIssues.filter(i => i.type === 'INVALID_PRODUCT_TITLE').length * 15)
+        - (titleIssues.filter(i => i.type === 'WEAK_PRODUCT_TITLE').length * 5)
+        - (descIssues.filter(i => i.type === 'MISSING_DESCRIPTION').length * 10)
+        - (descIssues.filter(i => i.type === 'WEAK_DESCRIPTION').length * 5)
+        - (descIssues.filter(i => i.type === 'GENERIC_DESCRIPTION').length * 3)
+      );
+      scores.visualTrust = Math.max(0,
+        100
+        - (noImageIssues.length * 30)
+        - (imageIssues.filter(i => i.type === 'LOW_IMAGE_COUNT').length * 15)
+        - (imageIssues.filter(i => i.type === 'EXCESSIVE_IMAGE_COUNT').length * 5)
+      );
       scores.catalogConsistency = Math.max(0, 100 - (consistencyIssues.length * 20));
 
       // Build "why" explanations for each score category
@@ -127,53 +142,50 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
           ? goodMsg
           : `Score reduced because ${parts.join(', and ')}.`;
 
+      // Phase 2: Rich score explanations describing what each metric covers
+      const dqParts = [
+        pricingIssues.length > 0 && `${pricingIssues.length} variant(s) have invalid pricing`,
+        titleIssues.filter(i => i.type === 'INVALID_PRODUCT_TITLE').length > 0 && `${titleIssues.filter(i => i.type === 'INVALID_PRODUCT_TITLE').length} product(s) have unusable titles`,
+        titleIssues.filter(i => i.type === 'WEAK_PRODUCT_TITLE').length > 0 && `${titleIssues.filter(i => i.type === 'WEAK_PRODUCT_TITLE').length} product(s) have weak titles`,
+        descIssues.filter(i => i.type === 'MISSING_DESCRIPTION').length > 0 && `${descIssues.filter(i => i.type === 'MISSING_DESCRIPTION').length} product(s) are missing descriptions`,
+        descIssues.filter(i => i.type === 'WEAK_DESCRIPTION').length > 0 && `${descIssues.filter(i => i.type === 'WEAK_DESCRIPTION').length} product(s) have thin descriptions`,
+        descIssues.filter(i => i.type === 'GENERIC_DESCRIPTION').length > 0 && `${descIssues.filter(i => i.type === 'GENERIC_DESCRIPTION').length} product(s) have generic descriptions`,
+      ].filter(Boolean);
+
+      const vtParts = [
+        noImageIssues.length > 0 && `${noImageIssues.length} product(s) have no images at all`,
+        imageIssues.filter(i => i.type === 'LOW_IMAGE_COUNT').length > 0 && `${imageIssues.filter(i => i.type === 'LOW_IMAGE_COUNT').length} product(s) have too few images`,
+        imageIssues.filter(i => i.type === 'EXCESSIVE_IMAGE_COUNT').length > 0 && `${imageIssues.filter(i => i.type === 'EXCESSIVE_IMAGE_COUNT').length} product(s) have excessive image counts`,
+      ].filter(Boolean);
+
+      const cParts = [
+        consistencyIssues.find(i => i.type === 'HIGH_FRAGMENTATION') && 'catalog spans too many product types (Flea Market Risk)',
+        consistencyIssues.find(i => ['COLLECTION_PRICE_OUTLIER', 'INCONSISTENT_PRICE_POSITIONING'].includes(i.type)) && 'extreme catalog price variance signals inconsistent positioning',
+        consistencyIssues.find(i => ['VARIANT_PRICE_GAP', 'CATALOG_INCONSISTENCY'].includes(i.type)) && 'some products have significant variant pricing gaps',
+      ].filter(Boolean);
+
+      const rParts = [
+        inventoryIssues.length > 0 && `${inventoryIssues.length} inventory anomaly(ies) detected`,
+        perfRiskIssues.length > 0 && `${perfRiskIssues.length} top-selling product(s) are missing visual trust`,
+        deadInventoryIssues.length > 0 && `${deadInventoryIssues.length} product(s) have high stock but zero sales`,
+      ].filter(Boolean);
+
       scoreExplanations = {
         dataQuality: {
           score: scores.productDataQuality,
-          explanation: buildExplanation(
-            scores.productDataQuality,
-            [
-              pricingIssues.length > 0 && `${pricingIssues.length} variant(s) have invalid pricing`,
-              descIssues.length > 0 && `${descIssues.length} product(s) have descriptions under 80 characters`,
-            ].filter(Boolean),
-            'Data Quality is strong — all products have valid pricing and sufficient descriptions.'
-          ),
+          explanation: `Data Quality covers product titles, descriptions, and pricing validity. ${dqParts.length === 0 ? 'All products have valid titles, pricing, and sufficient descriptions.' : 'Score reduced because ' + dqParts.join(', and ') + '.'}`,
         },
         visualTrust: {
           score: scores.visualTrust,
-          explanation: imageIssues.length === 0
-            ? 'Visual Trust is healthy — products meet the required image count for your plan.'
-            : `Visual Trust is ${scores.visualTrust < 40 ? 'critically low' : 'reduced'} because ${imageIssues.length} product(s) contain insufficient imagery and low-confidence visual assets.`,
+          explanation: `Visual Trust covers image count, missing images, and excessive imagery. ${vtParts.length === 0 ? 'All products meet image standards for your plan.' : 'Score reduced because ' + vtParts.join(', and ') + '.'}`,
         },
         consistency: {
           score: scores.catalogConsistency,
-          explanation: buildExplanation(
-            scores.catalogConsistency,
-            [
-              consistencyIssues.find(i => i.type === 'HIGH_FRAGMENTATION') &&
-                'the catalog spans too many distinct product types (Flea Market Risk)',
-              consistencyIssues.find(i => i.type === 'INCONSISTENT_PRICE_POSITIONING') &&
-                'extreme price variance (max > 20× median) signals inconsistent positioning',
-              consistencyIssues.find(i => i.type === 'CATALOG_INCONSISTENCY') &&
-                'some products show internal variant pricing variance > 10×',
-            ].filter(Boolean),
-            'Catalog Consistency is excellent — no fragmentation or pricing anomalies detected.'
-          ),
+          explanation: `Consistency covers pricing gaps between variants, inventory anomalies, and catalog coherence. ${cParts.length === 0 ? 'No fragmentation or pricing anomalies detected.' : 'Score reduced because ' + cParts.join(', and ') + '.'}`,
         },
         readiness: {
           score: scores.conversionReadiness,
-          explanation: buildExplanation(
-            scores.conversionReadiness,
-            [
-              inventoryIssues.length > 0 &&
-                `${inventoryIssues.length} inventory anomaly(ies) detected (lazy imports, uniform stock, or ghost listings)`,
-              perfRiskIssues.length > 0 &&
-                `${perfRiskIssues.length} top-selling product(s) are missing visual trust`,
-              deadInventoryIssues.length > 0 &&
-                `${deadInventoryIssues.length} product(s) have high stock but zero sales (dead capital)`,
-            ].filter(Boolean),
-            'Conversion Readiness is strong — no critical inventory or performance risks found.'
-          ),
+          explanation: `Readiness is a combined score based on catalog quality, visual trust, pricing integrity, inventory credibility, and scaling risk. ${rParts.length === 0 ? 'No critical inventory or performance risks found.' : 'Score impacted because ' + rParts.join(', and ') + '.'}`,
         },
       };
       
@@ -215,45 +227,75 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
         
         const affectedEntitiesArray = Array.from(issueGroup.affectedEntities);
 
-        if (issueGroup.type === 'LOW_IMAGE_COUNT') {
-          recommendation = 'Do not run ads to these products until images are added. Lack of visual trust will waste your ad budget.';
-          evidence = `${affectedEntitiesArray.length} products have fewer than ${plan?.imagesPerProduct || 3} images.`;
+        if (issueGroup.type === 'NO_PRODUCT_IMAGES') {
+          recommendation = 'This product has no visible product imagery. Do not run paid traffic to this product until images are added — customers cannot evaluate what they are buying.';
+          evidence = `${affectedEntitiesArray.length} product(s) have zero images.`;
+        } else if (issueGroup.type === 'LOW_IMAGE_COUNT') {
+          recommendation = 'This product has too few images to build buyer confidence. Weak visual trust can reduce conversion efficiency and waste paid traffic. Add more images before running ads.';
+          evidence = `${affectedEntitiesArray.length} product(s) have fewer than ${plan?.imagesPerProduct || 3} images.`;
+        } else if (issueGroup.type === 'EXCESSIVE_IMAGE_COUNT') {
+          recommendation = 'This product contains an unusually high number of images. Excessive or repetitive imagery may overwhelm buyers and create decision hesitation. Curate to the best 6–10 images.';
+          evidence = `${affectedEntitiesArray.length} product(s) have 20 or more images.`;
+        } else if (issueGroup.type === 'INVALID_PRODUCT_TITLE') {
+          recommendation = 'This product title is not commercially usable. Customers may not understand what is being sold, which weakens store credibility and purchase confidence. Fix before running any traffic.';
+          evidence = `${affectedEntitiesArray.length} product(s) have missing, single-character, or numeric-only titles.`;
+        } else if (issueGroup.type === 'WEAK_PRODUCT_TITLE') {
+          recommendation = 'This product title is too vague to support search, trust, or purchase intent. Use a clear, descriptive title that explains what the product is before running traffic.';
+          evidence = `${affectedEntitiesArray.length} product(s) have titles with fewer than 3 meaningful words.`;
         } else if (issueGroup.type === 'PRICING_ERROR') {
-          recommendation = 'Critical: Resolve $0 or null pricing immediately. These products are effectively unsellable and will cause checkout failures.';
-          evidence = `Found invalid pricing on ${affectedEntitiesArray.length} variants.`;
-        } else if (issueGroup.type === 'MISSING_DESCRIPTION' || issueGroup.type === 'WEAK_DESCRIPTION') {
-          recommendation = 'Pause SEO campaigns for these products. Descriptions are too short to convert organic or paid traffic.';
-          evidence = `${affectedEntitiesArray.length} products have insufficient descriptions (under 80 characters of raw text).`;
+          recommendation = 'Critical: Resolve $0 or null pricing immediately. These products are effectively unsellable and will cause checkout failures. Fix in Shopify Admin before running any ads.';
+          evidence = `Found invalid pricing on ${affectedEntitiesArray.length} variant(s).`;
+        } else if (issueGroup.type === 'MISSING_DESCRIPTION') {
+          recommendation = 'This product has no description. Customers do not have enough information to trust the product or make a confident purchase decision. Add a full description before scaling.';
+          evidence = `${affectedEntitiesArray.length} product(s) have no description text at all.`;
+        } else if (issueGroup.type === 'WEAK_DESCRIPTION') {
+          recommendation = 'This product description is too thin to support paid or organic traffic. Add benefits, materials, sizing, use cases, and trust-building details before scaling.';
+          evidence = `${affectedEntitiesArray.length} product(s) have descriptions under 50 words.`;
+        } else if (issueGroup.type === 'GENERIC_DESCRIPTION') {
+          recommendation = 'This description appears generic and does not explain why the customer should buy this product from your store. Rewrite with specific product benefits and differentiators.';
+          evidence = `${affectedEntitiesArray.length} product(s) have boilerplate or placeholder descriptions.`;
+        } else if (issueGroup.type === 'VARIANT_PRICE_GAP') {
+          recommendation = 'This product has large pricing gaps between variants. This may confuse buyers or indicate a pricing setup error. Review variant pricing before running traffic.';
+          evidence = `${affectedEntitiesArray.length} product(s) have variants with 3× or greater price gaps.`;
         } else if (issueGroup.type === 'CATALOG_INCONSISTENCY') {
-          recommendation = 'Review pricing strategy for these items. Extreme variant price gaps (10×+) often indicate errors that confuse buyers.';
-          evidence = `${affectedEntitiesArray.length} products show significant internal pricing variance.`;
+          recommendation = 'Review pricing strategy for these items. Extreme variant price gaps often indicate errors that confuse buyers and reduce purchase confidence.';
+          evidence = `${affectedEntitiesArray.length} product(s) show significant internal pricing variance.`;
         } else if (issueGroup.type === 'HIGH_PERFORMANCE_LOW_QUALITY') {
           recommendation = 'Immediate Risk: These top-selling products are missing visual trust. Fix images now to maintain conversion momentum and prevent refund risks.';
-          evidence = `${affectedEntitiesArray.length} high-performing products have sub-standard catalog quality.`;
+          evidence = `${affectedEntitiesArray.length} high-performing product(s) have sub-standard catalog quality.`;
         } else if (issueGroup.type === 'DEAD_INVENTORY') {
-          recommendation = 'Capital Risk: High stock levels with zero sales. Consider markdowns or clearing this inventory to free up capital for better-performing items.';
-          evidence = `${affectedEntitiesArray.length} stagnant products are tying up significant warehouse space.`;
+          recommendation = 'Capital Risk: High stock levels with zero sales in 60 days. Consider markdowns or clearing this inventory to free capital for better-performing items.';
+          evidence = `${affectedEntitiesArray.length} stagnant product(s) are tying up warehouse capital.`;
         } else if (issueGroup.type === 'LAZY_INVENTORY') {
-          recommendation = 'Commercial Trust Risk: Inventory quantities of 999, 9999, or 10000 are classic dropship placeholders. Update to real stock levels immediately.';
-          evidence = `${affectedEntitiesArray.length} variant(s) carry lazy import sentinel inventory values.`;
+          recommendation = 'Commercial Trust Risk: Inventory quantities of 999, 9999, or 10,000 are classic dropship placeholders. Update to real stock levels immediately to avoid low-trust perception.';
+          evidence = `${affectedEntitiesArray.length} variant(s) carry known lazy import sentinel inventory values.`;
         } else if (issueGroup.type === 'UNIFORM_INVENTORY') {
-          recommendation = 'Fake Scarcity Detected: All variants share the exact same stock level. This signals an unreviewed bulk import — review and correct inventory.';
-          evidence = `${affectedEntitiesArray.length} product(s) have 4+ variants all holding identical stock > 50 units.`;
+          recommendation = 'All variants share the same stock quantity, which may indicate an unreviewed bulk import or supplier-fed catalog. Review inventory levels to avoid a low-trust dropshipping perception.';
+          evidence = `${affectedEntitiesArray.length} product(s) have 4+ variants all holding identical stock above 50 units.`;
+        } else if (issueGroup.type === 'UNREALISTIC_INVENTORY') {
+          recommendation = 'This product shows unusually high inventory levels. Extremely high stock quantities (5,000+ units) may look artificial and reduce customer trust in your store.';
+          evidence = `${affectedEntitiesArray.length} variant(s) show inventory quantities above 5,000 units.`;
         } else if (issueGroup.type === 'GHOST_LISTING') {
-          recommendation = 'Ghost Listing: This published product has zero inventory. Enable continue-selling, add stock, or unpublish to prevent abandoned carts.';
+          recommendation = 'This product is visible but cannot be purchased due to zero inventory. This creates wasted browsing and may reduce customer confidence. Enable continue-selling, restock, or unpublish.';
           evidence = `${affectedEntitiesArray.length} published product(s) have zero total inventory.`;
         } else if (issueGroup.type === 'HIGH_FRAGMENTATION') {
-          recommendation = 'Niche Coherence Risk (Flea Market): Your catalog spans too many product types for its size. Buyers cannot trust what your store stands for. Consolidate or split into focused collections.';
-          evidence = 'Store has fewer than 50 products but more than 8 distinct collections — a signal of unfocused positioning.';
+          recommendation = 'Niche Coherence Risk (Flea Market Effect): Your catalog spans too many product types for its size. Buyers cannot trust what your store stands for. Consolidate or split into focused collections.';
+          evidence = 'Store has fewer than 50 products but more than 8 distinct collections — signals unfocused positioning.';
+        } else if (issueGroup.type === 'COLLECTION_PRICE_OUTLIER') {
+          recommendation = 'This product is priced far above similar products in the same catalog. Make sure the price is intentional and supported by premium positioning — otherwise it signals a setup error.';
+          evidence = 'One or more products are priced 20× or more above the median catalog price.';
         } else if (issueGroup.type === 'INCONSISTENT_PRICE_POSITIONING') {
-          recommendation = 'Price Positioning Risk: Your catalog price range is too extreme. Buyers at the low end and high end are completely different audiences — this undermines brand trust.';
-          evidence = 'The highest-priced product is more than 20× the median catalog price.';
+          recommendation = 'Price Positioning Risk: Your catalog price range is wide. Buyers at the low end and high end may be completely different audiences — review whether this is intentional.';
+          evidence = 'The highest-priced product is more than 10× the median catalog price.';
         }
 
         // Get affected products with id, shopifyId, and title for deep-linking
         const items = products
           .filter(p => affectedEntitiesArray.includes(p.shopifyId))
           .map(p => ({ id: p.id, shopifyId: p.shopifyId, title: p.title }));
+
+        // Sort severity: CRITICAL > HIGH > MEDIUM > LOW
+        const SEVERITY_ORDER = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
 
         return {
           id: issueGroup.id,
@@ -266,7 +308,14 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
           // keep legacy field for compatibility
           affectedProductTitles: items.map(p => p.title),
         };
-      }).filter(issue => issue.items && issue.items.length > 0);
+      }).filter(issue => issue.items && issue.items.length > 0)
+      .sort((a, b) => {
+        const SEVERITY_ORDER = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
+        const sA = SEVERITY_ORDER[a.severity?.toUpperCase()] ?? 4;
+        const sB = SEVERITY_ORDER[b.severity?.toUpperCase()] ?? 4;
+        if (sA !== sB) return sA - sB;
+        return (b.affectedCount || 0) - (a.affectedCount || 0);
+      });
 
       // Map product breakdown (all products with their issues)
       productBreakdown = products.map(p => {
@@ -307,6 +356,15 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
         : 'Immediate action required. Stop all paid traffic to prevent budget waste due to catalog quality issues.';
     }
 
+    // Plan details for dashboard visibility
+    const planDetails = {
+      plan: subscription?.plan ? subscription.plan.toUpperCase() : 'FREE',
+      maxProducts: plan?.maxProducts || 20,
+      imagesPerProduct: plan?.imagesPerProduct || 2,
+      productsAnalyzed: products.length,
+      scanFrequency: 'Weekly',
+    };
+
     res.json({
       shop: {
         id: shop.id,
@@ -319,11 +377,11 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
       isDataSufficient,
       dataIssues,
       scores: latestAudit ? scores : null,
-      // Score explanations — the "why" behind each metric
       scoreExplanations: latestAudit ? scoreExplanations : null,
       issues: issuesList,
       products: productBreakdown,
-      plan: subscription?.plan ? subscription.plan.toUpperCase() : 'FREE',
+      plan: planDetails.plan,
+      planDetails,
     });
   } catch (error) {
     console.error('Get dashboard error:', error);

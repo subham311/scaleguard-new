@@ -216,6 +216,7 @@ export default function Dashboard() {
   const scoreMetrics = [
     {
       label: "Data Quality",
+      measures: "Titles, descriptions, pricing validity",
       score: scores.productDataQuality,
       color: "#5C6AC4",
       icon: "◈",
@@ -223,6 +224,7 @@ export default function Dashboard() {
     },
     {
       label: "Visual Trust",
+      measures: "Image count, missing images, excessive imagery",
       score: scores.visualTrust,
       color: "#00A3BF",
       icon: "◉",
@@ -230,6 +232,7 @@ export default function Dashboard() {
     },
     {
       label: "Consistency",
+      measures: "Pricing gaps, inventory anomalies, catalog coherence",
       score: scores.catalogConsistency,
       color: "#00B779",
       icon: "◆",
@@ -237,6 +240,7 @@ export default function Dashboard() {
     },
     {
       label: "Readiness",
+      measures: "Commercial readiness & scaling risk",
       score: scores.conversionReadiness,
       color: "#637381",
       icon: "◎",
@@ -268,6 +272,50 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
+        
+        {/* ── Plan Details Banner ── */}
+        {data?.planDetails && (
+          <div style={{
+            background: colors.surface,
+            border: `1px solid ${colors.border}`,
+            borderRadius: radius.md,
+            padding: "12px 20px",
+            marginBottom: "20px",
+            boxShadow: shadow.card,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: "16px"
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <span style={{ fontSize: "14px", fontWeight: 700, color: colors.textPrimary }}>Active Plan:</span>
+              <Badge status="success">{data.planDetails.plan} Tier</Badge>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "24px" }}>
+              <div style={{ display: "flex", flexDirection: "column" }}>
+                <span style={{ fontSize: "10px", color: colors.textSecondary, textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.03em" }}>Products Audited</span>
+                <span style={{ fontSize: "14px", fontWeight: 700, color: colors.textPrimary, marginTop: "2px" }}>
+                  {data.planDetails.productsAnalyzed} / {data.planDetails.maxProducts} limit
+                </span>
+              </div>
+              <div style={{ width: "1px", height: "24px", background: colors.border }} />
+              <div style={{ display: "flex", flexDirection: "column" }}>
+                <span style={{ fontSize: "10px", color: colors.textSecondary, textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.03em" }}>Image Limit</span>
+                <span style={{ fontSize: "14px", fontWeight: 700, color: colors.textPrimary, marginTop: "2px" }}>
+                  {data.planDetails.imagesPerProduct} / product
+                </span>
+              </div>
+              <div style={{ width: "1px", height: "24px", background: colors.border }} />
+              <div style={{ display: "flex", flexDirection: "column" }}>
+                <span style={{ fontSize: "10px", color: colors.textSecondary, textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.03em" }}>Audit Frequency</span>
+                <span style={{ fontSize: "14px", fontWeight: 700, color: colors.textPrimary, marginTop: "2px" }}>
+                  {data.planDetails.scanFrequency}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
         
         {/* ── 0. Data Sufficiency Warning ── */}
         {data?.isDataSufficient === false && (
@@ -341,20 +389,22 @@ export default function Dashboard() {
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "10px" }}>
                     <ScoreRing score={metric.score} color={metric.color} />
                     <div style={{ textAlign: "center" }}>
-                      <div style={{ fontSize: "13px", fontWeight: 600, color: colors.textPrimary }}>{metric.label}</div>
+                      <div style={{ fontSize: "14px", fontWeight: 700, color: colors.textPrimary }}>{metric.label}</div>
+                      <div style={{ fontSize: "10px", color: colors.accent, fontWeight: 600, marginTop: "2px", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                        {metric.measures}
+                      </div>
                       {metric.explanation ? (
                         <div style={{
                           fontSize: "11px",
                           color: colors.textMuted,
-                          marginTop: "6px",
+                          marginTop: "8px",
                           lineHeight: "1.5",
                           textAlign: "center",
-                          maxWidth: "160px",
                         }}>
                           {metric.explanation}
                         </div>
                       ) : (
-                        <div style={{ fontSize: "11px", color: colors.textMuted, marginTop: "2px" }}>Catalog metric</div>
+                        <div style={{ fontSize: "11px", color: colors.textMuted, marginTop: "6px" }}>Catalog metric</div>
                       )}
                     </div>
                   </div>
@@ -365,7 +415,7 @@ export default function Dashboard() {
 
           {/* ── 3. Priority Fixes ── */}
           <Layout.Section>
-            <SectionLabel>Priority Fixes &amp; Recommendations</SectionLabel>
+            <SectionLabel>Priority Risks Before Scaling</SectionLabel>
             <Card>
               <div style={{ padding: "14px 20px", borderBottom: `1px solid ${colors.border}` }}>
                 <div style={{ fontSize: "13px", color: colors.textSecondary }}>
@@ -405,7 +455,7 @@ export default function Dashboard() {
                             }} />
                             <div style={{ minWidth: 0 }}>
                               <div style={{ fontSize: "14px", fontWeight: 600, color: colors.textPrimary, marginBottom: "2px" }}>{type}</div>
-                              <div style={{ fontSize: "12px", color: colors.textSecondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              <div style={{ fontSize: "12px", color: colors.textSecondary, lineHeight: "1.4", marginTop: "4px" }}>
                                 {recommendation}
                               </div>
                             </div>
