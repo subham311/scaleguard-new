@@ -156,15 +156,36 @@ export default function Dashboard() {
     }
   }, [data, isLoading, navigate]);
 
+  const latestJobStatus = data?.planDetails?.latestJob?.status;
+  const isCooldownActive = data?.planDetails?.isCooldownActive;
+
+  // Background polling for active re-analysis jobs
+  useEffect(() => {
+    let interval;
+    if (latestJobStatus === "PENDING" || latestJobStatus === "PROCESSING") {
+      interval = setInterval(() => {
+        refetch();
+      }, 4000); // Poll every 4 seconds for immediate merchant responsiveness
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [latestJobStatus, refetch]);
+
   const handleRunSync = async () => {
+    if (isCooldownActive) {
+      shopify.toast.show("Re-analysis cooldown is currently active.", { isError: true });
+      return;
+    }
     setIsSyncing(true);
     try {
       const response = await fetch("/v1/jobs/trigger-sync", { method: "POST" });
-      if (response.ok) {
-        shopify.toast.show("Sync started successfully.");
+      const resData = await response.json();
+      if (response.ok && resData.success) {
+        shopify.toast.show("Commercial re-analysis started.");
         await refetch();
       } else {
-        shopify.toast.show("Failed to start sync.", { isError: true });
+        shopify.toast.show(resData.message || "Failed to start sync.", { isError: true });
       }
     } catch (error) {
       shopify.toast.show("An error occurred.", { isError: true });
@@ -254,9 +275,14 @@ export default function Dashboard() {
       <Page
         title=""
         primaryAction={{
-          content: "Run Sync",
+          content: isCooldownActive 
+            ? "Sync Cooldown Active"
+            : (latestJobStatus === "PENDING" || latestJobStatus === "PROCESSING")
+              ? "Re-analysis Running..."
+              : "Run Sync",
           onAction: handleRunSync,
-          loading: isSyncing,
+          loading: isSyncing || latestJobStatus === "PENDING" || latestJobStatus === "PROCESSING",
+          disabled: isCooldownActive || latestJobStatus === "PENDING" || latestJobStatus === "PROCESSING",
         }}
       >
         {/* ── Custom Page Header ── */}
@@ -314,6 +340,85 @@ export default function Dashboard() {
                 </span>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* ── Active Sync Status Banner ── */}
+        {(latestJobStatus === "PENDING" || latestJobStatus === "PROCESSING") && (
+          <div style={{
+            background: colors.infoBg,
+            border: `1px solid ${colors.info}30`,
+            borderRadius: radius.md,
+            padding: "16px 20px",
+            marginBottom: "20px",
+            boxShadow: shadow.card,
+            display: "flex",
+            flexDirection: "column",
+            gap: "8px",
+            animation: "pulse 2s infinite"
+          }}>
+            <style>{`
+              @keyframes pulse {
+                0% { opacity: 0.95; }
+                50% { opacity: 1; transform: scale(1.001); }
+                100% { opacity: 0.95; }
+              }
+              @keyframes spin {
+                from { transform: rotate(0deg); }
+                to { transform: rotate(360deg); }
+              }
+            `}</style>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <span style={{ fontSize: "20px", animation: "spin 2s linear infinite" }}>🔄</span>
+              <div>
+                <div style={{ fontSize: "14px", fontWeight: 700, color: colors.info }}>
+                  Commercial re-analysis started
+                </div>
+                <div style={{ fontSize: "12px", color: colors.textSecondary, marginTop: "2px" }}>
+                  Updated products and catalog signals are being reprocessed in the background.
+                </div>
+              </div>
+            </div>
+            <div style={{
+              fontSize: "11px",
+              color: colors.textSecondary,
+              paddingLeft: "30px",
+              lineHeight: "1.5",
+              borderTop: `1px solid ${colors.info}15`,
+              paddingTop: "8px",
+              marginTop: "4px"
+            }}>
+              Updated scores and issue status may take time to refresh depending on:
+              <ul style={{ margin: "4px 0 0 16px", padding: 0 }}>
+                <li>Store size ({data?.planDetails?.productsAnalyzed} products)</li>
+                <li>Updated products & inventory complexity</li>
+                <li>Active subscription tier (<strong>{data?.planDetails?.plan} Tier</strong>: priority queue)</li>
+              </ul>
+            </div>
+          </div>
+        )}
+
+        {/* ── Cooldown Banner ── */}
+        {isCooldownActive && data?.planDetails?.cooldownRemainingMs > 0 && (
+          <div style={{
+            background: "#FFFBF0",
+            border: `1px solid #FFC40030`,
+            borderRadius: radius.md,
+            padding: "12px 20px",
+            marginBottom: "20px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: "12px"
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <span style={{ fontSize: "16px" }}>⏳</span>
+              <div style={{ fontSize: "13px", color: colors.warning, fontWeight: 500 }}>
+                Next manual re-analysis will be available in <strong>{Math.ceil(data.planDetails.cooldownRemainingMs / (60 * 1000))} minutes</strong> due to active tier limit.
+              </div>
+            </div>
+            <Badge status="attention">{data.planDetails.plan} Cooldown</Badge>
           </div>
         )}
         

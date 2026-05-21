@@ -356,13 +356,68 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
         : 'Immediate action required. Stop all paid traffic to prevent budget waste due to catalog quality issues.';
     }
 
+    // Fetch latest manual or scheduled sync/audit jobs to get sync state
+    const latestJob = await prisma.job.findFirst({
+      where: {
+        shopId: shop.id,
+        jobType: { in: ['DATA_SYNC', 'AUDIT_RUN'] },
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+
+    const planName = subscription?.pricingPlan?.name?.toUpperCase() 
+      || subscription?.plan?.toUpperCase() 
+      || 'LIGHT';
+
+    let cooldownMs = 24 * 60 * 60 * 1000;
+    if (planName === 'PRO') cooldownMs = 60 * 60 * 1000;
+    else if (planName === 'GROWTH') cooldownMs = 8 * 60 * 60 * 1000;
+
+    const lastSync = await prisma.job.findFirst({
+      where: {
+        shopId: shop.id,
+        jobType: 'DATA_SYNC',
+        status: 'COMPLETED',
+      },
+      orderBy: {
+        completedAt: 'desc',
+      },
+    });
+
+    let nextSyncAvailableAt = null;
+    let isCooldownActive = false;
+    let cooldownRemainingMs = 0;
+
+    if (lastSync && lastSync.completedAt) {
+      const elapsed = Date.now() - new Date(lastSync.completedAt).getTime();
+      if (elapsed < cooldownMs) {
+        nextSyncAvailableAt = new Date(new Date(lastSync.completedAt).getTime() + cooldownMs).toISOString();
+        isCooldownActive = true;
+        cooldownRemainingMs = cooldownMs - elapsed;
+      }
+    }
+
     // Plan details for dashboard visibility
     const planDetails = {
-      plan: subscription?.plan ? subscription.plan.toUpperCase() : 'FREE',
+      plan: planName,
       maxProducts: plan?.maxProducts || 20,
       imagesPerProduct: plan?.imagesPerProduct || 2,
       productsAnalyzed: products.length,
-      scanFrequency: 'Weekly',
+      scanFrequency: planName === 'PRO' ? 'Hourly' : planName === 'GROWTH' ? 'Daily' : 'Weekly',
+      nextSyncAvailableAt,
+      isCooldownActive,
+      cooldownRemainingMs,
+      latestJob: latestJob ? {
+        id: latestJob.id,
+        jobType: latestJob.jobType,
+        status: latestJob.status,
+        createdAt: latestJob.createdAt,
+        startedAt: latestJob.startedAt,
+        completedAt: latestJob.completedAt,
+        error: latestJob.error,
+      } : null,
     };
 
     res.json({
