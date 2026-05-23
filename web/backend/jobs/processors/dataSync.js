@@ -72,14 +72,25 @@ export async function processDataSync(jobData) {
         `(limit: ${limits.maxProducts} for ${planName})`
       );
 
-      for (const product of productsToSync) {
-        // Enforce imagesPerProduct limit on the image array
-        const limitedImages = Array.isArray(product.images)
-          ? product.images.slice(0, limits.imagesPerProduct)
-          : [];
-        const effectiveImageCount = limitedImages.length;
+      // Purge deleted products that are no longer in the active products list
+      const activeProductShopifyIds = productsToSync.map(p => String(p.id));
+      const deletedProductsResult = await prisma.product.deleteMany({
+        where: {
+          shopId: shop.id,
+          shopifyId: {
+            notIn: activeProductShopifyIds,
+          },
+        },
+      });
+      if (deletedProductsResult.count > 0) {
+        console.log(`🧹 [DataSync] Purged ${deletedProductsResult.count} deleted product(s) (with cascade delete for variants/performance).`);
+      }
 
-        // Upsert product — store limited image count
+      for (const product of productsToSync) {
+        // Get the full product image count
+        const fullImageCount = Array.isArray(product.images) ? product.images.length : 0;
+
+        // Upsert product — store full image count
         const savedProduct = await prisma.product.upsert({
           where: { shopifyId: String(product.id) },
           create: {
@@ -87,7 +98,7 @@ export async function processDataSync(jobData) {
             shopifyId: String(product.id),
             title: product.title,
             description: product.body_html,
-            imageCount: effectiveImageCount,
+            imageCount: fullImageCount,
             // Store collection IDs if present (used for fragmentation analysis)
             collectionIds: product.collections
               ? product.collections.map(c => c.id)
@@ -96,7 +107,7 @@ export async function processDataSync(jobData) {
           update: {
             title: product.title,
             description: product.body_html,
-            imageCount: effectiveImageCount,
+            imageCount: fullImageCount,
             collectionIds: product.collections
               ? product.collections.map(c => c.id)
               : (product.collection_id ? [product.collection_id] : null),
@@ -105,6 +116,20 @@ export async function processDataSync(jobData) {
 
         // Upsert variants
         if (product.variants) {
+          // Purge variants that are no longer present for this product
+          const activeVariantShopifyIds = product.variants.map(v => String(v.id));
+          const deletedVariantsResult = await prisma.variant.deleteMany({
+            where: {
+              productId: savedProduct.id,
+              shopifyId: {
+                notIn: activeVariantShopifyIds,
+              },
+            },
+          });
+          if (deletedVariantsResult.count > 0) {
+            console.log(`🧹 [DataSync] Purged ${deletedVariantsResult.count} deleted variant(s) for product ${product.title}.`);
+          }
+
           for (const variant of product.variants) {
             await prisma.variant.upsert({
               where: { shopifyId: String(variant.id) },

@@ -250,7 +250,7 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
           evidence = `${affectedEntitiesArray.length} product(s) have no description text at all.`;
         } else if (issueGroup.type === 'WEAK_DESCRIPTION') {
           recommendation = 'This product description is too thin to support paid or organic traffic. Add benefits, materials, sizing, use cases, and trust-building details before scaling.';
-          evidence = `${affectedEntitiesArray.length} product(s) have descriptions under 50 words.`;
+          evidence = `${affectedEntitiesArray.length} product(s) have descriptions under 75 words.`;
         } else if (issueGroup.type === 'GENERIC_DESCRIPTION') {
           recommendation = 'This description appears generic and does not explain why the customer should buy this product from your store. Rewrite with specific product benefits and differentiators.';
           evidence = `${affectedEntitiesArray.length} product(s) have boilerplate or placeholder descriptions.`;

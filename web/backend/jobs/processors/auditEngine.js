@@ -1,7 +1,7 @@
 import prisma from '../../config/database.js';
 
 const LAZY_INVENTORY_VALUES = new Set([999, 9999, 10000]);
-const DESCRIPTION_MIN_CHARS = 250; // ~50 words
+const DESCRIPTION_MIN_CHARS = 350; // ~70 words
 const EXCESSIVE_IMAGE_THRESHOLD = 20;
 const UNREALISTIC_INVENTORY_THRESHOLD = 5000;
 
@@ -51,6 +51,30 @@ function isGenericDescription(html) {
   if (!html) return false;
   const text = html.replace(/<[^>]*>?/gm, '').toLowerCase().trim();
   return GENERIC_DESCRIPTION_KEYWORDS.some(kw => text.includes(kw));
+}
+
+function isDimensionalOrQuantityProduct(variants) {
+  if (!variants || variants.length === 0) return false;
+  
+  // Dimensional pattern: e.g., "50x80", "50 x 80", "2 * 4"
+  const dimRegex = /\d+\s*(?:x|\*)\s*\d+/i;
+  
+  // Unit pattern: e.g., "100ml", "2kg", "5 pack", "10pcs", "3 ft"
+  const unitRegex = /\b\d+\s*(?:cm|mm|inch|inches|ft|feet|yard|meters?|pcs|pack|pieces|kg|g|ml|l|liter|litre|oz|lbs?|gal|gallons?)\b/i;
+  
+  // Word indicators: e.g., "pack", "pcs", "pieces", "set of", "pair", "dimension", "size", "custom", "volume"
+  const wordIndicators = ['pack', 'pcs', 'pieces', 'set of', 'pair', 'dimension', 'size', 'custom', 'volume'];
+
+  for (const variant of variants) {
+    if (!variant.title) continue;
+    const title = variant.title.toLowerCase();
+    
+    if (dimRegex.test(title)) return true;
+    if (unitRegex.test(title)) return true;
+    if (wordIndicators.some(indicator => title.includes(indicator))) return true;
+  }
+  
+  return false;
 }
 
 function buildScoreExplanations(issues, scores) {
@@ -229,7 +253,7 @@ export async function processAuditRun(jobData) {
             confidence: 'MEDIUM',
           },
         });
-      } else if (wordCount < 50 || textLen < DESCRIPTION_MIN_CHARS) {
+      } else if (wordCount < 75 || textLen < DESCRIPTION_MIN_CHARS) {
         issues.push({
           auditRunId: auditRun.id,
           type: 'WEAK_DESCRIPTION',
@@ -406,10 +430,17 @@ export async function processAuditRun(jobData) {
       // Variant price gap (tiered)
       if (minPrice !== Infinity && maxPrice !== -Infinity && maxPrice > minPrice) {
         const ratio = maxPrice / minPrice;
+        const isDimensional = isDimensionalOrQuantityProduct(product.variants);
+        
         let gapSeverity = null;
-        if (ratio >= 10) gapSeverity = 'CRITICAL';
-        else if (ratio >= 5) gapSeverity = 'HIGH';
-        else if (ratio >= 3) gapSeverity = 'LOW';
+        if (isDimensional) {
+          // Suppress normal size/quantity differences. Only flag extreme ratios (>= 15x) as potential typo anomalies.
+          if (ratio >= 15) gapSeverity = 'HIGH';
+        } else {
+          if (ratio >= 10) gapSeverity = 'CRITICAL';
+          else if (ratio >= 5) gapSeverity = 'HIGH';
+          else if (ratio >= 3) gapSeverity = 'LOW';
+        }
 
         if (gapSeverity) {
           issues.push({
@@ -423,8 +454,13 @@ export async function processAuditRun(jobData) {
               minPrice,
               maxPrice,
               ratio: ratio.toFixed(1),
-              reason: `Variant prices vary by ${ratio.toFixed(1)}× (min $${minPrice.toFixed(2)}, max $${maxPrice.toFixed(2)}).`,
-              businessImpact: 'Large pricing gaps between variants may confuse buyers or indicate a setup error.',
+              isDimensional,
+              reason: isDimensional
+                ? `Extreme variant price gap of ${ratio.toFixed(1)}× on a dimensional/quantity product (min $${minPrice.toFixed(2)}, max $${maxPrice.toFixed(2)}).`
+                : `Variant prices vary by ${ratio.toFixed(1)}× (min $${minPrice.toFixed(2)}, max $${maxPrice.toFixed(2)}).`,
+              businessImpact: isDimensional
+                ? 'Extremely large price gap between dimensional variants suggests a potential configuration typo.'
+                : 'Large pricing gaps between variants may confuse buyers or indicate a setup error.',
               confidence: 'HIGH',
             },
           });
