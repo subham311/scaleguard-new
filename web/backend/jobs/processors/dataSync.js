@@ -30,6 +30,142 @@ function resolvePlanLimits(subscription) {
   return DEFAULT_LIMITS;
 }
 
+function getAbsolutePricingThreshold(productTitle) {
+  if (!productTitle) return 100000;
+  const title = productTitle.toLowerCase();
+  
+  const luxuryKeywords = [
+    'rolex', 'daytona', 'patek', 'audemars', 'luxury watch', 'diamond ring',
+    'antique', 'fine art', 'painting', 'sculpture', 'estate', 'property',
+    'house', 'car', 'vehicle', 'porsche', 'ferrari', 'lamborghini'
+  ];
+  
+  const isLuxury = luxuryKeywords.some(kw => title.includes(kw));
+  if (isLuxury) return 1000000;
+  
+  const standardRetailKeywords = [
+    'coat', 'jacket', 't-shirt', 'shirt', 'pants', 'trousers', 'shoes', 'sneakers',
+    'bag', 'backpack', 'wallet', 'belt', 'socks', 'dress', 'skirt', 'hoodie',
+    'makeup', 'lipstick', 'phone', 'charger', 'case', 'mug', 'cup', 'bottle'
+  ];
+  
+  const isStandardRetail = standardRetailKeywords.some(kw => title.includes(kw));
+  if (isStandardRetail) return 30000;
+  
+  return 100000;
+}
+
+function isInvalidTitle(title) {
+  if (!title || title.trim().length === 0) return true;
+  const t = title.trim();
+  if (t.length <= 1) return true;
+  if (/^[\d\s\-_\.]+$/.test(t)) return true;
+  return false;
+}
+
+function isSerialTitle(title) {
+  if (!title) return false;
+  const t = title.toLowerCase().trim();
+
+  // Exclude brand exceptions
+  const exceptions = [
+    /iphone\s+\d+/i,
+    /rtx\s+\d+/i,
+    /xbox\s+series\s+[a-z0-9]+/i,
+    /cat\s+s\d+/i,
+    /\b(oneplus|redmi|xiaomi|samsung|galaxy|pixel|huawei|realme|oppo|vivo|motorola|sony|playstation|nintendo|macbook|ipad|oyster|rolex|omega|garmin|thrustmaster)\b/i
+  ];
+  if (exceptions.some(regex => regex.test(t))) {
+    return false;
+  }
+
+  // Contiguous sequence of 7+ digits
+  if (/\d{7,}/.test(t)) {
+    return true;
+  }
+
+  // Digits percentage check (35% AND sequence of 5+ digits)
+  const nonSpaceChars = t.replace(/\s+/g, '');
+  if (nonSpaceChars.length > 0) {
+    const digitCount = (t.match(/\d/g) || []).length;
+    const hasFiveDigitSeq = /\d{5,}/.test(t);
+    if (hasFiveDigitSeq && (digitCount / nonSpaceChars.length) > 0.35) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function calculateProductPriority(product) {
+  let score = 0;
+  
+  const title = product.title || '';
+  const variants = product.variants || [];
+  const imageCount = Array.isArray(product.images) ? product.images.length : 0;
+  const description = product.body_html || '';
+  const isPublished = product.published_at !== null && product.status === 'active';
+  
+  let totalInventory = 0;
+  let minPrice = Infinity;
+  let maxPrice = -Infinity;
+  const inventoryValues = [];
+  
+  for (const variant of variants) {
+    const price = variant.price ? parseFloat(variant.price) : 0;
+    const inv = typeof variant.inventory_quantity === 'number' ? variant.inventory_quantity : parseInt(variant.inventory_quantity || 0, 10);
+    const validInv = Number.isFinite(inv) ? inv : 0;
+    totalInventory += validInv;
+    inventoryValues.push(validInv);
+    
+    if (price <= 0) {
+      score += 1000; // CRITICAL: PRICING_ERROR
+    } else {
+      if (price < minPrice) minPrice = price;
+      if (price > maxPrice) maxPrice = price;
+      
+      const thresh = getAbsolutePricingThreshold(title);
+      if (price >= thresh) {
+        score += 1000; // CRITICAL: ABSOLUTE_PRICING_ANOMALY
+      }
+    }
+    
+    if (validInv > 5000) {
+      score += 100; // HIGH: UNREALISTIC_INVENTORY
+    }
+  }
+  
+  if (isPublished && totalInventory === 0) {
+    score += 1000; // CRITICAL: GHOST_LISTING
+  }
+  
+  if (imageCount === 0) {
+    score += 1000; // CRITICAL: NO_PRODUCT_IMAGES
+  } else if (imageCount >= 20) {
+    score += 10; // MEDIUM: EXCESSIVE_IMAGE_COUNT
+  }
+  
+  if (isInvalidTitle(title)) {
+    score += 100; // HIGH: INVALID_PRODUCT_TITLE
+  } else if (isSerialTitle(title)) {
+    score += 100; // HIGH: SERIAL_PRODUCT_TITLE
+  }
+  
+  if (!description || description.trim().length === 0) {
+    score += 100; // HIGH: MISSING_DESCRIPTION
+  }
+  
+  if (variants.length >= 4) {
+    const highValues = inventoryValues.filter(v => v > 50);
+    const uniqueHighValues = new Set(highValues);
+    if (uniqueHighValues.size === 1 && highValues.length === variants.length) {
+      score += 10; // MEDIUM: UNIFORM_INVENTORY
+    }
+  }
+  
+  return score;
+}
+
 export async function processDataSync(jobData) {
   const { shopId } = jobData;
 
@@ -64,8 +200,14 @@ export async function processDataSync(jobData) {
 
     // ── PLAN-LIMITED PRODUCT INGESTION ─────────────────────────────────────
     if (shopifyData?.products) {
+      // Dynamic Discovery Pass & Risk-First Ingestion
+      const prioritizedProducts = shopifyData.products
+        .map(p => ({ product: p, priority: calculateProductPriority(p) }))
+        .sort((a, b) => b.priority - a.priority)
+        .map(item => item.product);
+
       // Enforce maxProducts LIMIT before iterating — cost control
-      const productsToSync = shopifyData.products.slice(0, limits.maxProducts);
+      const productsToSync = prioritizedProducts.slice(0, limits.maxProducts);
 
       console.log(
         `📦 [DataSync] Syncing ${productsToSync.length} of ${shopifyData.products.length} products ` +
@@ -90,7 +232,7 @@ export async function processDataSync(jobData) {
         // Get the full product image count
         const fullImageCount = Array.isArray(product.images) ? product.images.length : 0;
 
-        // Upsert product — store full image count
+        // Upsert product — store full image count and storefront published status
         const savedProduct = await prisma.product.upsert({
           where: { shopifyId: String(product.id) },
           create: {
@@ -99,6 +241,7 @@ export async function processDataSync(jobData) {
             title: product.title,
             description: product.body_html,
             imageCount: fullImageCount,
+            published: product.published_at !== null && product.status === 'active',
             // Store collection IDs if present (used for fragmentation analysis)
             collectionIds: product.collections
               ? product.collections.map(c => c.id)
@@ -108,6 +251,7 @@ export async function processDataSync(jobData) {
             title: product.title,
             description: product.body_html,
             imageCount: fullImageCount,
+            published: product.published_at !== null && product.status === 'active',
             collectionIds: product.collections
               ? product.collections.map(c => c.id)
               : (product.collection_id ? [product.collection_id] : null),
@@ -209,10 +353,13 @@ export async function processDataSync(jobData) {
       }
     }
 
-    // ── Update shop timestamp ──────────────────────────────────────────────
+    // ── Update shop timestamp and catalog count ─────────────────────────────
     await prisma.shop.update({
       where: { id: shopId },
-      data: { dataCollectedAt: new Date() },
+      data: { 
+        dataCollectedAt: new Date(),
+        totalProductsCount: shopifyData?.products?.length || 0,
+      },
     });
 
     const syncedCount = Math.min(

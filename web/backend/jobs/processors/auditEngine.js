@@ -47,6 +47,99 @@ function isWeakTitle(title) {
   return false;
 }
 
+function getAbsolutePricingThreshold(productTitle) {
+  if (!productTitle) return 100000;
+  const title = productTitle.toLowerCase();
+  
+  const luxuryKeywords = [
+    'rolex', 'daytona', 'patek', 'audemars', 'luxury watch', 'diamond ring',
+    'antique', 'fine art', 'painting', 'sculpture', 'estate', 'property',
+    'house', 'car', 'vehicle', 'porsche', 'ferrari', 'lamborghini'
+  ];
+  
+  const isLuxury = luxuryKeywords.some(kw => title.includes(kw));
+  if (isLuxury) return 1000000;
+  
+  const standardRetailKeywords = [
+    'coat', 'jacket', 't-shirt', 'shirt', 'pants', 'trousers', 'shoes', 'sneakers',
+    'bag', 'backpack', 'wallet', 'belt', 'socks', 'dress', 'skirt', 'hoodie',
+    'makeup', 'lipstick', 'phone', 'charger', 'case', 'mug', 'cup', 'bottle'
+  ];
+  
+  const isStandardRetail = standardRetailKeywords.some(kw => title.includes(kw));
+  if (isStandardRetail) return 30000;
+  
+  return 100000;
+}
+
+function isSerialTitle(title) {
+  if (!title) return false;
+  const t = title.toLowerCase().trim();
+
+  // Exclude brand exceptions
+  const exceptions = [
+    /iphone\s+\d+/i,
+    /rtx\s+\d+/i,
+    /xbox\s+series\s+[a-z0-9]+/i,
+    /cat\s+s\d+/i,
+    /\b(oneplus|redmi|xiaomi|samsung|galaxy|pixel|huawei|realme|oppo|vivo|motorola|sony|playstation|nintendo|macbook|ipad|oyster|rolex|omega|garmin|thrustmaster)\b/i
+  ];
+  if (exceptions.some(regex => regex.test(t))) {
+    return false;
+  }
+
+  // Contiguous sequence of 7+ digits
+  if (/\d{7,}/.test(t)) {
+    return true;
+  }
+
+  // Digits percentage check (35% AND sequence of 5+ digits)
+  const nonSpaceChars = t.replace(/\s+/g, '');
+  if (nonSpaceChars.length > 0) {
+    const digitCount = (t.match(/\d/g) || []).length;
+    const hasFiveDigitSeq = /\d{5,}/.test(t);
+    if (hasFiveDigitSeq && (digitCount / nonSpaceChars.length) > 0.35) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function isKeywordStuffedTitle(title) {
+  if (!title) return false;
+  const t = title.trim();
+  const tLower = t.toLowerCase();
+
+  // 1. Check for excessive separators
+  const commaCount = (t.match(/,/g) || []).length;
+  const pipeCount = (t.match(/\|/g) || []).length;
+  const slashCount = (t.match(/\//g) || []).length;
+  if (commaCount >= 3 || pipeCount >= 3 || slashCount >= 3) {
+    return true;
+  }
+
+  // 2. Repetitive wording (duplicate words of length >= 3)
+  const words = tLower.split(/[\s,\|/\-_]+/).filter(w => w.length >= 3);
+  const wordCounts = {};
+  for (const w of words) {
+    wordCounts[w] = (wordCounts[w] || 0) + 1;
+    if (wordCounts[w] >= 3) {
+      return true;
+    }
+  }
+
+  // 3. Extreme length with low unique word ratio
+  if (t.length > 80 && words.length > 10) {
+    const uniqueWords = new Set(words);
+    if (uniqueWords.size / words.length < 0.7) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 function isGenericDescription(html) {
   if (!html) return false;
   const text = html.replace(/<[^>]*>?/gm, '').toLowerCase().trim();
@@ -78,8 +171,8 @@ function isDimensionalOrQuantityProduct(variants) {
 }
 
 function buildScoreExplanations(issues, scores) {
-  const pricingIssues = issues.filter(i => i.type === 'PRICING_ERROR');
-  const titleIssues = issues.filter(i => i.type === 'INVALID_PRODUCT_TITLE' || i.type === 'WEAK_PRODUCT_TITLE');
+  const pricingIssues = issues.filter(i => ['PRICING_ERROR', 'ABSOLUTE_PRICING_ANOMALY'].includes(i.type));
+  const titleIssues = issues.filter(i => ['INVALID_PRODUCT_TITLE', 'WEAK_PRODUCT_TITLE', 'SERIAL_PRODUCT_TITLE', 'KEYWORD_STUFFED_TITLE'].includes(i.type));
   const descIssues = issues.filter(i => ['MISSING_DESCRIPTION', 'WEAK_DESCRIPTION', 'GENERIC_DESCRIPTION'].includes(i.type));
   const imageIssues = issues.filter(i => ['NO_PRODUCT_IMAGES', 'LOW_IMAGE_COUNT', 'EXCESSIVE_IMAGE_COUNT'].includes(i.type));
   const consistencyIssues = issues.filter(i =>
@@ -221,6 +314,39 @@ export async function processAuditRun(jobData) {
         });
       }
 
+      // ── 1B. SERIAL NUMBER STYLE & KEYWORD STUFFING ────────────────────────
+      if (isSerialTitle(product.title)) {
+        issues.push({
+          auditRunId: auditRun.id,
+          type: 'SERIAL_PRODUCT_TITLE',
+          severity: 'HIGH',
+          category: 'CONTENT',
+          affectedEntities: [product.shopifyId],
+          evidence: {
+            title: product.title,
+            reason: 'Title contains serial-like numbers or excessive numeric sequences. This makes products look like uncurated database dumps rather than high-end retail items.',
+            businessImpact: 'Unprofessional serial-like names reduce customer buying trust.',
+            confidence: 'HIGH',
+          },
+        });
+      }
+
+      if (isKeywordStuffedTitle(product.title)) {
+        issues.push({
+          auditRunId: auditRun.id,
+          type: 'KEYWORD_STUFFED_TITLE',
+          severity: 'MEDIUM',
+          category: 'CONTENT',
+          affectedEntities: [product.shopifyId],
+          evidence: {
+            title: product.title,
+            reason: 'Title appears keyword-stuffed or overloaded with repetitive wording or dividers. While title length itself is fine, overloaded structures look unprofessional.',
+            businessImpact: 'Keyword stuffing harms storefront clarity and brand trust.',
+            confidence: 'HIGH',
+          },
+        });
+      }
+
       // ── 2. DESCRIPTION ───────────────────────────────────────────────────
       const textLen = rawTextLength(product.description);
       const wordCount = rawWordCount(product.description);
@@ -342,6 +468,26 @@ export async function processAuditRun(jobData) {
         } else {
           if (variant.price < minPrice) minPrice = variant.price;
           if (variant.price > maxPrice) maxPrice = variant.price;
+
+          // Absolute Pricing Anomaly: context-aware dynamic safety threshold check
+          const pricingThreshold = getAbsolutePricingThreshold(product.title);
+          if (variant.price >= pricingThreshold) {
+            issues.push({
+              auditRunId: auditRun.id,
+              type: 'ABSOLUTE_PRICING_ANOMALY',
+              severity: 'CRITICAL',
+              category: 'PRICING',
+              affectedEntities: [variant.shopifyId],
+              evidence: {
+                title: `${product.title} — ${variant.title}`,
+                price: variant.price,
+                threshold: pricingThreshold,
+                reason: `Standalone price of £${variant.price.toLocaleString()} exceeds the context-aware sanity threshold of £${pricingThreshold.toLocaleString()} for this product class.`,
+                businessImpact: 'Extremely unrealistic standalone pricing triggers critical catalog risk and blocks checkout conversions.',
+                confidence: 'HIGH',
+              },
+            });
+          }
         }
 
         const inv = typeof variant.inventory === 'number' ? variant.inventory : 0;
@@ -410,7 +556,7 @@ export async function processAuditRun(jobData) {
       }
 
       // Ghost listing: published with zero total inventory
-      if (totalInventory === 0) {
+      if (product.published && totalInventory === 0) {
         issues.push({
           auditRunId: auditRun.id,
           type: 'GHOST_LISTING',
@@ -586,22 +732,30 @@ export async function processAuditRun(jobData) {
       }
     }
 
-    // ── 7. PERSIST ISSUES ──────────────────────────────────────────────────
+    // ── 7. PERSIST ISSUES & MERCHANT OVERRIDES ──────────────────────────────
+    const overrides = await prisma.merchantOverride.findMany({
+      where: { shopId },
+    });
+    const ignoredRuleTypes = new Set(overrides.map(o => o.ruleType));
+
+    const filteredIssues = issues.filter(issue => !ignoredRuleTypes.has(issue.type));
+
+    // Save ALL issues (unfiltered) to database to support immediate frontend restore toggling
     if (issues.length > 0) {
       await prisma.issue.createMany({ data: issues });
     }
 
     // ── 8. CALCULATE SCORES ────────────────────────────────────────────────
-    const pricingIssues       = issues.filter(i => i.type === 'PRICING_ERROR');
-    const titleIssues         = issues.filter(i => ['INVALID_PRODUCT_TITLE', 'WEAK_PRODUCT_TITLE'].includes(i.type));
-    const descIssues          = issues.filter(i => ['MISSING_DESCRIPTION', 'WEAK_DESCRIPTION', 'GENERIC_DESCRIPTION'].includes(i.type));
-    const allImageIssues      = issues.filter(i => ['NO_PRODUCT_IMAGES', 'LOW_IMAGE_COUNT', 'EXCESSIVE_IMAGE_COUNT'].includes(i.type));
-    const noImageIssues       = issues.filter(i => i.type === 'NO_PRODUCT_IMAGES');
-    const allConsistencyIssues = issues.filter(i =>
+    const pricingIssues       = filteredIssues.filter(i => ['PRICING_ERROR', 'ABSOLUTE_PRICING_ANOMALY'].includes(i.type));
+    const titleIssues         = filteredIssues.filter(i => ['INVALID_PRODUCT_TITLE', 'WEAK_PRODUCT_TITLE', 'SERIAL_PRODUCT_TITLE', 'KEYWORD_STUFFED_TITLE'].includes(i.type));
+    const descIssues          = filteredIssues.filter(i => ['MISSING_DESCRIPTION', 'WEAK_DESCRIPTION', 'GENERIC_DESCRIPTION'].includes(i.type));
+    const allImageIssues      = filteredIssues.filter(i => ['NO_PRODUCT_IMAGES', 'LOW_IMAGE_COUNT', 'EXCESSIVE_IMAGE_COUNT'].includes(i.type));
+    const noImageIssues       = filteredIssues.filter(i => i.type === 'NO_PRODUCT_IMAGES');
+    const allConsistencyIssues = filteredIssues.filter(i =>
       ['VARIANT_PRICE_GAP', 'CATALOG_INCONSISTENCY', 'HIGH_FRAGMENTATION', 'INCONSISTENT_PRICE_POSITIONING', 'COLLECTION_PRICE_OUTLIER'].includes(i.type)
     );
-    const perfRiskIssues      = issues.filter(i => i.type === 'HIGH_PERFORMANCE_LOW_QUALITY');
-    const criticalIssues      = issues.filter(i => i.severity === 'CRITICAL');
+    const perfRiskIssues      = filteredIssues.filter(i => i.type === 'HIGH_PERFORMANCE_LOW_QUALITY');
+    const criticalIssues      = filteredIssues.filter(i => i.severity === 'CRITICAL');
 
     const scores = {
       productDataQuality: Math.max(0,
@@ -609,6 +763,8 @@ export async function processAuditRun(jobData) {
         - (pricingIssues.length * 15)
         - (titleIssues.filter(i => i.type === 'INVALID_PRODUCT_TITLE').length * 15)
         - (titleIssues.filter(i => i.type === 'WEAK_PRODUCT_TITLE').length * 5)
+        - (titleIssues.filter(i => i.type === 'SERIAL_PRODUCT_TITLE').length * 8)
+        - (titleIssues.filter(i => i.type === 'KEYWORD_STUFFED_TITLE').length * 4)
         - (descIssues.filter(i => i.type === 'MISSING_DESCRIPTION').length * 10)
         - (descIssues.filter(i => i.type === 'WEAK_DESCRIPTION').length * 5)
         - (descIssues.filter(i => i.type === 'GENERIC_DESCRIPTION').length * 3)
@@ -627,15 +783,15 @@ export async function processAuditRun(jobData) {
     if (criticalIssues.length > 0) conversionReadiness = Math.min(conversionReadiness, 45);
     scores.conversionReadiness = conversionReadiness;
 
-    const explanations = buildScoreExplanations(issues, scores);
+    const explanations = buildScoreExplanations(filteredIssues, scores);
 
     await prisma.auditRun.update({
       where: { id: auditRun.id },
       data: { status: 'COMPLETED', completedAt: new Date() },
     });
 
-    console.log(`✅ Phase 2 audit completed for shop ${shopId}. Found ${issues.length} issues.`);
-    return { success: true, issuesCount: issues.length, auditRunId: auditRun.id, scores, explanations };
+    console.log(`✅ Phase 2 audit completed for shop ${shopId}. Found ${filteredIssues.length} issues.`);
+    return { success: true, issuesCount: filteredIssues.length, auditRunId: auditRun.id, scores, explanations };
 
   } catch (error) {
     console.error(`❌ Audit run failed for shop ${shopId}:`, error);

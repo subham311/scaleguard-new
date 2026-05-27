@@ -147,6 +147,78 @@ export default function Dashboard() {
   const [searchValue, setSearchValue] = useState("");
   const [severityFilter, setSeverityFilter] = useState("ALL");
 
+  const [overrides, setOverrides] = useState([]);
+  const [isSavingOverride, setIsSavingOverride] = useState(false);
+
+  const fetchOverrides = async () => {
+    try {
+      const res = await fetch("/v1/api/overrides");
+      const resData = await res.json();
+      if (res.ok && resData.success) {
+        setOverrides(resData.overrides || []);
+      }
+    } catch (err) {
+      console.error("Error fetching overrides:", err);
+    }
+  };
+
+  useEffect(() => {
+    fetchOverrides();
+  }, []);
+
+  const handleToggleOverride = async (ruleType, isIgnored) => {
+    setIsSavingOverride(true);
+    try {
+      const res = await fetch("/v1/api/overrides", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ruleType, isIgnored }),
+      });
+      const resData = await res.json();
+      if (res.ok && resData.success) {
+        shopify.toast.show(
+          isIgnored 
+            ? "Rule ignored. Re-calculating scores..." 
+            : "Rule restored. Re-calculating scores..."
+        );
+        await refetch();
+        await fetchOverrides();
+      } else {
+        shopify.toast.show(resData.error || "Failed to update override.", { isError: true });
+      }
+    } catch (err) {
+      shopify.toast.show("An error occurred.", { isError: true });
+    }
+    setIsSavingOverride(false);
+  };
+
+  const handleDeleteOverride = async (ruleType) => {
+    const confirmed = window.confirm(
+      "Are you sure you want to delete this ignored rule permanently? It will be completely removed and will not appear again until a fresh sync is run."
+    );
+    if (!confirmed) return;
+
+    setIsSavingOverride(true);
+    try {
+      const res = await fetch("/v1/api/overrides/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ruleType }),
+      });
+      const resData = await res.json();
+      if (res.ok && resData.success) {
+        shopify.toast.show("Rule deleted permanently. Re-calculating scores...");
+        await refetch();
+        await fetchOverrides();
+      } else {
+        shopify.toast.show(resData.error || "Failed to delete rule.", { isError: true });
+      }
+    } catch (err) {
+      shopify.toast.show("An error occurred.", { isError: true });
+    }
+    setIsSavingOverride(false);
+  };
+
   useEffect(() => {
     if (!isLoading) {
       const status = data?.subscription?.status;
@@ -320,9 +392,9 @@ export default function Dashboard() {
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: "24px" }}>
               <div style={{ display: "flex", flexDirection: "column" }}>
-                <span style={{ fontSize: "10px", color: colors.textSecondary, textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.03em" }}>Products Audited</span>
-                <span style={{ fontSize: "14px", fontWeight: 700, color: colors.textPrimary, marginTop: "2px" }}>
-                  {data.planDetails.productsAnalyzed} / {data.planDetails.maxProducts} limit
+                <span style={{ fontSize: "10px", color: colors.textSecondary, textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.03em" }}>Catalog Scan Status</span>
+                <span style={{ fontSize: "13px", fontWeight: 500, color: colors.textPrimary, marginTop: "2px" }}>
+                  Scanned: <strong style={{ fontWeight: 700 }}>{data?.shop?.totalProductsCount || data.planDetails.productsAnalyzed}</strong> products | Monitored: <strong style={{ fontWeight: 700 }}>{data.planDetails.productsAnalyzed}</strong> of {data.planDetails.maxProducts}
                 </span>
               </div>
               <div style={{ width: "1px", height: "24px", background: colors.border }} />
@@ -606,7 +678,32 @@ export default function Dashboard() {
                                 <span style={{ fontSize: "12px", fontWeight: 600, color: colors.textSecondary, textTransform: "uppercase", letterSpacing: "0.05em" }}>
                                   Affected Products ({items?.length ?? affectedProductTitles.length})
                                 </span>
-                                <span style={{ fontSize: "11px", color: colors.textMuted }}>Click a product to fix in Shopify</span>
+                                <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                                  <span style={{ fontSize: "11px", color: colors.textMuted }}>Click to edit</span>
+                                  {item.rawType && (
+                                    <>
+                                      <div style={{ height: "12px", width: "1px", background: colors.border }} />
+                                      <button
+                                        onClick={() => handleToggleOverride(item.rawType, true)}
+                                        disabled={isSavingOverride}
+                                        style={{
+                                          border: "none",
+                                          background: "transparent",
+                                          color: colors.critical,
+                                          fontSize: "11px",
+                                          fontWeight: 600,
+                                          cursor: "pointer",
+                                          padding: 0,
+                                          display: "flex",
+                                          alignItems: "center",
+                                          gap: "3px"
+                                        }}
+                                      >
+                                        ✕ Ignore rule for my storefront
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
                               </div>
 
                               {/* Scrollable product list */}
@@ -769,6 +866,67 @@ export default function Dashboard() {
               </div>
             </Card>
           </Layout.Section>
+
+          {/* ── 5. Ignored Rules & Overrides Settings ── */}
+          {overrides.length > 0 && (
+            <Layout.Section>
+              <SectionLabel>Ignored Rules & Overrides</SectionLabel>
+              <Card>
+                <div style={{ padding: "20px 24px" }}>
+                  <div style={{ marginBottom: "16px" }}>
+                    <div style={{ fontSize: "16px", fontWeight: 700, color: colors.textPrimary }}>
+                      Ignored Rules Manager
+                    </div>
+                    <div style={{ fontSize: "13px", color: colors.textSecondary, marginTop: "4px" }}>
+                      These active audits have been manually bypassed for your storefront. They will not impact your Scale Readiness Score or display active findings.
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                    {overrides.map((override) => (
+                      <div
+                        key={override.id}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          padding: "12px 16px",
+                          border: `1px solid ${colors.border}`,
+                          borderRadius: radius.md,
+                          background: colors.surfaceAlt,
+                        }}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                          <span style={{ fontSize: "14px" }}>👁️‍Q</span>
+                          <span style={{ fontSize: "13px", fontWeight: 600, color: colors.textPrimary }}>
+                            {override.ruleType.replace(/_/g, " ")}
+                          </span>
+                        </div>
+                        <div style={{ display: "flex", gap: "8px" }}>
+                          <Button
+                            size="slim"
+                            outline
+                            disabled={isSavingOverride}
+                            onClick={() => handleToggleOverride(override.ruleType, false)}
+                          >
+                            Restore Rule
+                          </Button>
+                          <Button
+                            size="slim"
+                            destructive
+                            outline
+                            disabled={isSavingOverride}
+                            onClick={() => handleDeleteOverride(override.ruleType)}
+                          >
+                            Delete Rule
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </Card>
+            </Layout.Section>
+          )}
         </Layout>
 
         {/* Bottom spacing */}

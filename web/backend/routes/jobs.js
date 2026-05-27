@@ -60,7 +60,7 @@ router.post('/trigger-sync', authenticateShop, async (req, res) => {
 
     let cooldownMs = 24 * 60 * 60 * 1000; // 24h default
     if (planName === 'PRO') {
-      cooldownMs = 60 * 60 * 1000; // 60 minutes
+      cooldownMs = 3 * 60 * 60 * 1000; // 3 hours
     } else if (planName === 'GROWTH') {
       cooldownMs = 8 * 60 * 60 * 1000; // 8 hours
     }

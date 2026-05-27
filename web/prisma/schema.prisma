@@ -35,6 +35,9 @@ model Shop {
   products          Product[]
   auditRuns         AuditRun[]
   orders            Order[]
+  overrides         MerchantOverride[]
+  
+  totalProductsCount Int      @default(0)
   
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
@@ -158,6 +161,7 @@ model Product {
   description       String?
   imageCount        Int       @default(0)
   collectionIds     Json?
+  published         Boolean   @default(true)
   
   variants          Variant[]
   performance       PerformanceMetric?
@@ -277,4 +281,16 @@ model PerformanceMetric {
   updatedAt         DateTime  @updatedAt
   
   @@index([productId])
+}
+
+model MerchantOverride {
+  id          String   @id @default(uuid())
+  shopId      String
+  shop        Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  ruleType    String   // e.g., "UNIFORM_INVENTORY"
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([shopId, ruleType])
+  @@index([shopId])
 }

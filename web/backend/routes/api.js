@@ -97,13 +97,20 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
       dataIssues.push('Add at least 5 products to get a reliable catalog audit.');
     }
 
+    // Fetch active overrides
+    const overrides = await prisma.merchantOverride.findMany({
+      where: { shopId: shop.id },
+    });
+    const ignoredRuleTypes = new Set(overrides.map(o => o.ruleType));
+
     if (latestAudit) {
-      const issues = latestAudit.issues;
+      // Recalculate scores and verdict on filtered issues dynamically
+      const issues = latestAudit.issues.filter(i => !ignoredRuleTypes.has(i.type));
       
       // Calculate deductions
       const criticalIssues = issues.filter(i => i.severity === 'CRITICAL');
-      const pricingIssues = issues.filter(i => i.type === 'PRICING_ERROR');
-      const titleIssues = issues.filter(i => ['INVALID_PRODUCT_TITLE', 'WEAK_PRODUCT_TITLE'].includes(i.type));
+      const pricingIssues = issues.filter(i => ['PRICING_ERROR', 'ABSOLUTE_PRICING_ANOMALY'].includes(i.type));
+      const titleIssues = issues.filter(i => ['INVALID_PRODUCT_TITLE', 'WEAK_PRODUCT_TITLE', 'SERIAL_PRODUCT_TITLE', 'KEYWORD_STUFFED_TITLE'].includes(i.type));
       const descIssues = issues.filter(i =>
         ['MISSING_DESCRIPTION', 'WEAK_DESCRIPTION', 'GENERIC_DESCRIPTION'].includes(i.type)
       );
@@ -124,6 +131,8 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
         - (pricingIssues.length * 15)
         - (titleIssues.filter(i => i.type === 'INVALID_PRODUCT_TITLE').length * 15)
         - (titleIssues.filter(i => i.type === 'WEAK_PRODUCT_TITLE').length * 5)
+        - (titleIssues.filter(i => i.type === 'SERIAL_PRODUCT_TITLE').length * 8)
+        - (titleIssues.filter(i => i.type === 'KEYWORD_STUFFED_TITLE').length * 4)
         - (descIssues.filter(i => i.type === 'MISSING_DESCRIPTION').length * 10)
         - (descIssues.filter(i => i.type === 'WEAK_DESCRIPTION').length * 5)
         - (descIssues.filter(i => i.type === 'GENERIC_DESCRIPTION').length * 3)
@@ -144,9 +153,12 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
 
       // Phase 2: Rich score explanations describing what each metric covers
       const dqParts = [
-        pricingIssues.length > 0 && `${pricingIssues.length} variant(s) have invalid pricing`,
+        pricingIssues.filter(i => i.type === 'PRICING_ERROR').length > 0 && `${pricingIssues.filter(i => i.type === 'PRICING_ERROR').length} variant(s) have invalid pricing`,
+        pricingIssues.filter(i => i.type === 'ABSOLUTE_PRICING_ANOMALY').length > 0 && `${pricingIssues.filter(i => i.type === 'ABSOLUTE_PRICING_ANOMALY').length} variant(s) have unrealistic standalone pricing`,
         titleIssues.filter(i => i.type === 'INVALID_PRODUCT_TITLE').length > 0 && `${titleIssues.filter(i => i.type === 'INVALID_PRODUCT_TITLE').length} product(s) have unusable titles`,
         titleIssues.filter(i => i.type === 'WEAK_PRODUCT_TITLE').length > 0 && `${titleIssues.filter(i => i.type === 'WEAK_PRODUCT_TITLE').length} product(s) have weak titles`,
+        titleIssues.filter(i => i.type === 'SERIAL_PRODUCT_TITLE').length > 0 && `${titleIssues.filter(i => i.type === 'SERIAL_PRODUCT_TITLE').length} product(s) have serial-like titles`,
+        titleIssues.filter(i => i.type === 'KEYWORD_STUFFED_TITLE').length > 0 && `${titleIssues.filter(i => i.type === 'KEYWORD_STUFFED_TITLE').length} product(s) have keyword-stuffed titles`,
         descIssues.filter(i => i.type === 'MISSING_DESCRIPTION').length > 0 && `${descIssues.filter(i => i.type === 'MISSING_DESCRIPTION').length} product(s) are missing descriptions`,
         descIssues.filter(i => i.type === 'WEAK_DESCRIPTION').length > 0 && `${descIssues.filter(i => i.type === 'WEAK_DESCRIPTION').length} product(s) have thin descriptions`,
         descIssues.filter(i => i.type === 'GENERIC_DESCRIPTION').length > 0 && `${descIssues.filter(i => i.type === 'GENERIC_DESCRIPTION').length} product(s) have generic descriptions`,
@@ -287,11 +299,23 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
         } else if (issueGroup.type === 'INCONSISTENT_PRICE_POSITIONING') {
           recommendation = 'Price Positioning Risk: Your catalog price range is wide. Buyers at the low end and high end may be completely different audiences — review whether this is intentional.';
           evidence = 'The highest-priced product is more than 10× the median catalog price.';
+        } else if (issueGroup.type === 'ABSOLUTE_PRICING_ANOMALY') {
+          recommendation = 'Critical: Standalone price is extremely unrealistic. Accidental pricing mistakes (e.g. adding extra zeros) can block checkouts and hurt storefront trust. Review immediately in Shopify Admin.';
+          evidence = `Standalone price exceeds the context-aware sanity threshold for this product class.`;
+        } else if (issueGroup.type === 'SERIAL_PRODUCT_TITLE') {
+          recommendation = 'This product title contains excessive numeric sequences or serial-like patterns. This makes your store look like a low-quality catalog dump rather than a curated retail brand. Rewrite with readable titles.';
+          evidence = 'Title carries long numeric blocks or a serial-number pattern.';
+        } else if (issueGroup.type === 'KEYWORD_STUFFED_TITLE') {
+          recommendation = 'This product title appears keyword-stuffed or overloaded with repetitive wording or dividers. While title length itself is fine, overloaded structures look unprofessional and reduce buyer trust. Curate for readability.';
+          evidence = 'Title has repetitive words or excessive separation characters.';
         }
 
         // Get affected products with id, shopifyId, and title for deep-linking
         const items = products
-          .filter(p => affectedEntitiesArray.includes(p.shopifyId))
+          .filter(p => 
+            affectedEntitiesArray.includes(p.shopifyId) || 
+            (p.variants && p.variants.some(v => affectedEntitiesArray.includes(v.shopifyId)))
+          )
           .map(p => ({ id: p.id, shopifyId: p.shopifyId, title: p.title }));
 
         // Sort severity: CRITICAL > HIGH > MEDIUM > LOW
@@ -300,6 +324,7 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
         return {
           id: issueGroup.id,
           type: issueGroup.type.replace(/_/g, ' '),
+          rawType: issueGroup.type,
           severity: issueGroup.severity,
           recommendation,
           evidence,
@@ -319,7 +344,10 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
 
       // Map product breakdown (all products with their issues)
       productBreakdown = products.map(p => {
-        const productIssues = issues.filter(i => i.affectedEntities.includes(p.shopifyId));
+        const productIssues = issues.filter(i => 
+          (i.affectedEntities && i.affectedEntities.includes(p.shopifyId)) ||
+          (p.variants && p.variants.some(v => i.affectedEntities && i.affectedEntities.includes(v.shopifyId)))
+        );
         
         return {
           id: p.id,
@@ -372,7 +400,7 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
       || 'LIGHT';
 
     let cooldownMs = 24 * 60 * 60 * 1000;
-    if (planName === 'PRO') cooldownMs = 60 * 60 * 1000;
+    if (planName === 'PRO') cooldownMs = 3 * 60 * 60 * 1000; // 3 hours
     else if (planName === 'GROWTH') cooldownMs = 8 * 60 * 60 * 1000;
 
     const lastSync = await prisma.job.findFirst({
@@ -405,7 +433,7 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
       maxProducts: plan?.maxProducts || 20,
       imagesPerProduct: plan?.imagesPerProduct || 2,
       productsAnalyzed: products.length,
-      scanFrequency: planName === 'PRO' ? 'Hourly' : planName === 'GROWTH' ? 'Daily' : 'Weekly',
+      scanFrequency: planName === 'PRO' ? 'Every 3 Hours' : planName === 'GROWTH' ? 'Daily' : 'Weekly',
       nextSyncAvailableAt,
       isCooldownActive,
       cooldownRemainingMs,
@@ -425,6 +453,7 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
         id: shop.id,
         domain: shop.shopDomain,
         dataCollectedAt: shop.dataCollectedAt,
+        totalProductsCount: shop.totalProductsCount || 0,
       },
       subscription: subscription || null,
       verdict: latestAudit ? verdict : 'Waiting for Sync',
@@ -741,6 +770,104 @@ router.get('/data-status', authenticateFlexible, async (req, res) => {
     }
     
     res.status(500).json({ error: 'Failed to get data status' });
+  }
+});
+
+// Get all merchant overrides
+router.get('/overrides', authenticateFlexible, async (req, res) => {
+  try {
+    const shop = req.shop;
+    const overrides = await prisma.merchantOverride.findMany({
+      where: { shopId: shop.id },
+    });
+    res.json({ success: true, overrides });
+  } catch (error) {
+    console.error('Get overrides error:', error);
+    res.status(500).json({ error: 'Failed to get overrides' });
+  }
+});
+
+// Toggle a merchant override
+router.post('/overrides', authenticateFlexible, async (req, res) => {
+  try {
+    const shop = req.shop;
+    const { ruleType, isIgnored } = req.body;
+
+    if (!ruleType) {
+      return res.status(400).json({ error: 'ruleType is required' });
+    }
+
+    if (isIgnored) {
+      // Create override
+      await prisma.merchantOverride.upsert({
+        where: {
+          shopId_ruleType: {
+            shopId: shop.id,
+            ruleType: ruleType,
+          },
+        },
+        create: {
+          shopId: shop.id,
+          ruleType: ruleType,
+        },
+        update: {},
+      });
+    } else {
+      // Remove override
+      await prisma.merchantOverride.deleteMany({
+        where: {
+          shopId: shop.id,
+          ruleType: ruleType,
+        },
+      });
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Toggle override error:', error);
+    res.status(500).json({ error: 'Failed to toggle override' });
+  }
+});
+
+// Permanently delete an ignored rule's override and all its associated issues
+router.post('/overrides/delete', authenticateFlexible, async (req, res) => {
+  try {
+    const shop = req.shop;
+    const { ruleType } = req.body;
+
+    if (!ruleType) {
+      return res.status(400).json({ error: 'ruleType is required' });
+    }
+
+    // 1. Find all AuditRuns for this shop
+    const auditRuns = await prisma.auditRun.findMany({
+      where: { shopId: shop.id },
+      select: { id: true }
+    });
+    const auditRunIds = auditRuns.map(r => r.id);
+
+    // 2. Delete all Issue records of this type for this shop's audit runs
+    if (auditRunIds.length > 0) {
+      await prisma.issue.deleteMany({
+        where: {
+          auditRunId: { in: auditRunIds },
+          type: ruleType,
+        },
+      });
+    }
+
+    // 3. Delete any MerchantOverride record for this shop and ruleType
+    await prisma.merchantOverride.deleteMany({
+      where: {
+        shopId: shop.id,
+        ruleType: ruleType,
+      },
+    });
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Delete override error:', error);
+    res.status(500).json({ error: 'Failed to delete ignored rule' });
   }
 });
 
