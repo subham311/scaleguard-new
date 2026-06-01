@@ -265,11 +265,18 @@ export async function processAuditRun(jobData) {
       include: { subscription: { include: { pricingPlan: true } } },
     });
 
-    const plan = shop.subscription?.pricingPlan || {
-      maxProducts: 20,
-      imagesPerProduct: 2,
-      auditType: 'BASIC',
-    };
+    let fallbackPlan = { maxProducts: 20, imagesPerProduct: 2, auditType: 'BASIC' };
+    if (shop.subscription && shop.subscription.plan) {
+      const planName = shop.subscription.plan.toUpperCase();
+      if (planName === 'LIGHT') {
+        fallbackPlan.maxProducts = 20; fallbackPlan.imagesPerProduct = 2;
+      } else if (planName === 'GROWTH') {
+        fallbackPlan.maxProducts = 75; fallbackPlan.imagesPerProduct = 5;
+      } else if (planName === 'PRO') {
+        fallbackPlan.maxProducts = 200; fallbackPlan.imagesPerProduct = 10;
+      }
+    }
+    const plan = shop.subscription?.pricingPlan || fallbackPlan;
 
     const products = await prisma.product.findMany({
       where: { shopId },
@@ -524,7 +531,7 @@ export async function processAuditRun(jobData) {
               title: `${product.title} — ${variant.title}`,
               inventory: inv,
               threshold: UNREALISTIC_INVENTORY_THRESHOLD,
-              reason: `Stock quantity of ${inv.toLocaleString()} units is unusually high.`,
+              reason: `Inventory quantity appears unusually high for a retail storefront and may reduce storefront trust perception or resemble supplier-fed catalog patterns.`,
               businessImpact: 'Extremely high stock may look artificial and reduce customer trust.',
               confidence: 'HIGH',
             },
@@ -547,7 +554,7 @@ export async function processAuditRun(jobData) {
               title: product.title,
               variantCount,
               uniformValue: inventoryValues[0],
-              reason: `All ${variantCount} variants share exactly ${inventoryValues[0]} units — suggests unreviewed bulk import.`,
+              reason: `All variants share identical inventory values. This may indicate supplier-fed inventory feeds, bulk imports, or inventory levels that have not been reviewed manually.`,
               businessImpact: 'May indicate supplier-fed catalog. Review inventory to avoid low-trust dropshipping perception.',
               confidence: 'HIGH',
             },
@@ -555,8 +562,19 @@ export async function processAuditRun(jobData) {
         }
       }
 
-      // Ghost listing: published with zero total inventory
-      if (product.published && totalInventory === 0) {
+      // Ghost listing: published with no collections assigned
+      let collections = [];
+      if (product.collectionIds) {
+        try {
+          collections = Array.isArray(product.collectionIds)
+            ? product.collectionIds
+            : JSON.parse(String(product.collectionIds));
+        } catch (e) {
+          collections = [];
+        }
+      }
+      
+      if (product.published && collections.length === 0) {
         issues.push({
           auditRunId: auditRun.id,
           type: 'GHOST_LISTING',
@@ -565,9 +583,8 @@ export async function processAuditRun(jobData) {
           affectedEntities: [product.shopifyId],
           evidence: {
             title: product.title,
-            totalInventory: 0,
-            reason: 'Published product with zero total inventory.',
-            businessImpact: 'Customers can browse but cannot purchase. Creates wasted browsing and reduces confidence.',
+            reason: 'Published product with no collection assignment.',
+            businessImpact: 'Product is active but invisible to storefront customers because it is not assigned to any collections. This creates a ghost listing.',
             confidence: 'HIGH',
           },
         });
@@ -756,6 +773,9 @@ export async function processAuditRun(jobData) {
     );
     const perfRiskIssues      = filteredIssues.filter(i => i.type === 'HIGH_PERFORMANCE_LOW_QUALITY');
     const criticalIssues      = filteredIssues.filter(i => i.severity === 'CRITICAL');
+    const inventoryIssues     = filteredIssues.filter(i =>
+      ['LAZY_INVENTORY', 'UNIFORM_INVENTORY', 'GHOST_LISTING', 'UNREALISTIC_INVENTORY'].includes(i.type)
+    );
 
     const scores = {
       productDataQuality: Math.max(0,
@@ -775,7 +795,10 @@ export async function processAuditRun(jobData) {
         - (allImageIssues.filter(i => i.type === 'LOW_IMAGE_COUNT').length * 15)
         - (allImageIssues.filter(i => i.type === 'EXCESSIVE_IMAGE_COUNT').length * 5)
       ),
-      catalogConsistency: Math.max(0, 100 - (allConsistencyIssues.length * 20)),
+      catalogConsistency: Math.max(0, 100 
+        - (allConsistencyIssues.length * 20)
+        - (inventoryIssues.length * 15)
+      ),
     };
 
     const baseReadiness = (scores.productDataQuality * 0.4) + (scores.visualTrust * 0.4) + (scores.catalogConsistency * 0.2);

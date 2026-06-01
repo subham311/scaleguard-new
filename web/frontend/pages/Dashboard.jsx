@@ -192,32 +192,7 @@ export default function Dashboard() {
     setIsSavingOverride(false);
   };
 
-  const handleDeleteOverride = async (ruleType) => {
-    const confirmed = window.confirm(
-      "Are you sure you want to delete this ignored rule permanently? It will be completely removed and will not appear again until a fresh sync is run."
-    );
-    if (!confirmed) return;
 
-    setIsSavingOverride(true);
-    try {
-      const res = await fetch("/v1/api/overrides/delete", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ruleType }),
-      });
-      const resData = await res.json();
-      if (res.ok && resData.success) {
-        shopify.toast.show("Rule deleted permanently. Re-calculating scores...");
-        await refetch();
-        await fetchOverrides();
-      } else {
-        shopify.toast.show(resData.error || "Failed to delete rule.", { isError: true });
-      }
-    } catch (err) {
-      shopify.toast.show("An error occurred.", { isError: true });
-    }
-    setIsSavingOverride(false);
-  };
 
   useEffect(() => {
     if (!isLoading) {
@@ -680,26 +655,42 @@ export default function Dashboard() {
                                 </span>
                                 <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
                                   <span style={{ fontSize: "11px", color: colors.textMuted }}>Click to edit</span>
-                                  {item.rawType && (
+                                  {item.rawType && ['UNREALISTIC_INVENTORY', 'UNIFORM_INVENTORY'].includes(item.rawType) && (
                                     <>
                                       <div style={{ height: "12px", width: "1px", background: colors.border }} />
                                       <button
                                         onClick={() => handleToggleOverride(item.rawType, true)}
                                         disabled={isSavingOverride}
                                         style={{
-                                          border: "none",
-                                          background: "transparent",
-                                          color: colors.critical,
+                                          border: `1px solid ${colors.border}`,
+                                          background: colors.surfaceAlt,
+                                          color: colors.textSecondary,
                                           fontSize: "11px",
                                           fontWeight: 600,
                                           cursor: "pointer",
-                                          padding: 0,
+                                          padding: "4px 10px",
+                                          borderRadius: "14px",
                                           display: "flex",
                                           alignItems: "center",
-                                          gap: "3px"
+                                          gap: "6px",
+                                          transition: "all 0.2s ease"
+                                        }}
+                                        onMouseEnter={(e) => {
+                                          e.currentTarget.style.background = colors.criticalBg;
+                                          e.currentTarget.style.color = colors.critical;
+                                          e.currentTarget.style.borderColor = colors.critical;
+                                        }}
+                                        onMouseLeave={(e) => {
+                                          e.currentTarget.style.background = colors.surfaceAlt;
+                                          e.currentTarget.style.color = colors.textSecondary;
+                                          e.currentTarget.style.borderColor = colors.border;
                                         }}
                                       >
-                                        ✕ Ignore rule for my storefront
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                          <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                                          <line x1="1" y1="1" x2="23" y2="23"></line>
+                                        </svg>
+                                        Ignore this rule because inventory visibility is not shown to customers on my storefront
                                       </button>
                                     </>
                                   )}
@@ -910,15 +901,7 @@ export default function Dashboard() {
                           >
                             Restore Rule
                           </Button>
-                          <Button
-                            size="slim"
-                            destructive
-                            outline
-                            disabled={isSavingOverride}
-                            onClick={() => handleDeleteOverride(override.ruleType)}
-                          >
-                            Delete Rule
-                          </Button>
+
                         </div>
                       </div>
                     ))}

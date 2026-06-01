@@ -677,6 +677,20 @@ router.post('/create-charge', authenticateShop, async (req, res) => {
       data: { maturityLevel: 'ACTIVE' }
     });
 
+    // Automatically trigger a background data sync to update catalog limits
+    try {
+      await prisma.job.create({
+        data: {
+          shopId: req.shop.id,
+          jobType: 'DATA_SYNC',
+          status: 'PENDING',
+        },
+      });
+      console.log('✅ Background data sync triggered for plan upgrade');
+    } catch (jobError) {
+      console.error('⚠️ Failed to trigger background data sync:', jobError.message);
+    }
+
     return res.json({
       success: true,
       message: `Simulated ${planName} plan activation successful`,

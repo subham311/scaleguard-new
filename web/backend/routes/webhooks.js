@@ -542,6 +542,20 @@ router.post('/charges/confirm', async (req, res) => {
             status: updateSubResult.result.status,
             chargeId: updateSubResult.result.chargeId,
           });
+
+          // Automatically trigger a background data sync to update catalog limits
+          try {
+            await prisma.job.create({
+              data: {
+                shopId: shop.id,
+                jobType: 'DATA_SYNC',
+                status: 'PENDING',
+              },
+            });
+            console.log('✅ Background data sync triggered for plan upgrade');
+          } catch (jobError) {
+            console.error('⚠️ Failed to trigger background data sync:', jobError.message);
+          }
         } else if (updateSubResult.isConnectionError) {
           console.error('⚠️ Could not update subscription - database unavailable');
         }
@@ -686,6 +700,22 @@ router.post('/app_subscriptions/update', async (req, res) => {
         status: updateResult.result.status,
         chargeId: updateResult.result.chargeId,
       });
+
+      // Automatically trigger a background data sync to update catalog limits if ACTIVE
+      if (ourStatus === 'ACTIVE') {
+        try {
+          await prisma.job.create({
+            data: {
+              shopId: shop.id,
+              jobType: 'DATA_SYNC',
+              status: 'PENDING',
+            },
+          });
+          console.log('✅ Background data sync triggered for plan upgrade');
+        } catch (jobError) {
+          console.error('⚠️ Failed to trigger background data sync:', jobError.message);
+        }
+      }
     } else if (updateResult.isConnectionError) {
       console.error('⚠️ Could not update subscription - database unavailable');
     }

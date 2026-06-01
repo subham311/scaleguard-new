@@ -143,7 +143,10 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
         - (imageIssues.filter(i => i.type === 'LOW_IMAGE_COUNT').length * 15)
         - (imageIssues.filter(i => i.type === 'EXCESSIVE_IMAGE_COUNT').length * 5)
       );
-      scores.catalogConsistency = Math.max(0, 100 - (consistencyIssues.length * 20));
+      scores.catalogConsistency = Math.max(0, 100 
+        - (consistencyIssues.length * 20)
+        - (inventoryIssues.length * 15)
+      );
 
       // Build "why" explanations for each score category
       const buildExplanation = (score, parts, goodMsg) =>
@@ -282,11 +285,11 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
           recommendation = 'Commercial Trust Risk: Inventory quantities of 999, 9999, or 10,000 are classic dropship placeholders. Update to real stock levels immediately to avoid low-trust perception.';
           evidence = `${affectedEntitiesArray.length} variant(s) carry known lazy import sentinel inventory values.`;
         } else if (issueGroup.type === 'UNIFORM_INVENTORY') {
-          recommendation = 'All variants share the same stock quantity, which may indicate an unreviewed bulk import or supplier-fed catalog. Review inventory levels to avoid a low-trust dropshipping perception.';
-          evidence = `${affectedEntitiesArray.length} product(s) have 4+ variants all holding identical stock above 50 units.`;
+          recommendation = 'All variants share identical inventory values. This may indicate supplier-fed inventory feeds, bulk imports, or inventory levels that have not been reviewed manually.';
+          evidence = `${affectedEntitiesArray.length} product(s) have 4+ variants all holding identical stock.`;
         } else if (issueGroup.type === 'UNREALISTIC_INVENTORY') {
-          recommendation = 'This product shows unusually high inventory levels. Extremely high stock quantities (5,000+ units) may look artificial and reduce customer trust in your store.';
-          evidence = `${affectedEntitiesArray.length} variant(s) show inventory quantities above 5,000 units.`;
+          recommendation = 'Inventory quantity appears unusually high for a retail storefront and may reduce storefront trust perception or resemble supplier-fed catalog patterns.';
+          evidence = `${affectedEntitiesArray.length} variant(s) show unusual inventory quantities.`;
         } else if (issueGroup.type === 'GHOST_LISTING') {
           recommendation = 'This product is visible but cannot be purchased due to zero inventory. This creates wasted browsing and may reduce customer confidence. Enable continue-selling, restock, or unpublish.';
           evidence = `${affectedEntitiesArray.length} published product(s) have zero total inventory.`;
@@ -399,6 +402,13 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
       || subscription?.plan?.toUpperCase() 
       || 'LIGHT';
 
+    const PLAN_LIMITS = {
+      LIGHT: { maxProducts: 20, imagesPerProduct: 2, scanFrequency: 'Weekly' },
+      GROWTH: { maxProducts: 75, imagesPerProduct: 5, scanFrequency: 'Daily' },
+      PRO: { maxProducts: 200, imagesPerProduct: 10, scanFrequency: 'Every 3 Hours' }
+    };
+    const defaultLimits = PLAN_LIMITS[planName] || PLAN_LIMITS.LIGHT;
+
     let cooldownMs = 24 * 60 * 60 * 1000;
     if (planName === 'PRO') cooldownMs = 3 * 60 * 60 * 1000; // 3 hours
     else if (planName === 'GROWTH') cooldownMs = 8 * 60 * 60 * 1000;
@@ -430,8 +440,8 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
     // Plan details for dashboard visibility
     const planDetails = {
       plan: planName,
-      maxProducts: plan?.maxProducts || 20,
-      imagesPerProduct: plan?.imagesPerProduct || 2,
+      maxProducts: plan?.maxProducts || defaultLimits.maxProducts,
+      imagesPerProduct: plan?.imagesPerProduct || defaultLimits.imagesPerProduct,
       productsAnalyzed: products.length,
       scanFrequency: planName === 'PRO' ? 'Every 3 Hours' : planName === 'GROWTH' ? 'Daily' : 'Weekly',
       nextSyncAvailableAt,
@@ -797,6 +807,11 @@ router.post('/overrides', authenticateFlexible, async (req, res) => {
       return res.status(400).json({ error: 'ruleType is required' });
     }
 
+    const ALLOWED_OVERRIDES = ['UNREALISTIC_INVENTORY', 'UNIFORM_INVENTORY'];
+    if (!ALLOWED_OVERRIDES.includes(ruleType)) {
+      return res.status(403).json({ error: 'This rule type cannot be overridden.' });
+    }
+
     if (isIgnored) {
       // Create override
       await prisma.merchantOverride.upsert({
@@ -829,47 +844,7 @@ router.post('/overrides', authenticateFlexible, async (req, res) => {
   }
 });
 
-// Permanently delete an ignored rule's override and all its associated issues
-router.post('/overrides/delete', authenticateFlexible, async (req, res) => {
-  try {
-    const shop = req.shop;
-    const { ruleType } = req.body;
 
-    if (!ruleType) {
-      return res.status(400).json({ error: 'ruleType is required' });
-    }
-
-    // 1. Find all AuditRuns for this shop
-    const auditRuns = await prisma.auditRun.findMany({
-      where: { shopId: shop.id },
-      select: { id: true }
-    });
-    const auditRunIds = auditRuns.map(r => r.id);
-
-    // 2. Delete all Issue records of this type for this shop's audit runs
-    if (auditRunIds.length > 0) {
-      await prisma.issue.deleteMany({
-        where: {
-          auditRunId: { in: auditRunIds },
-          type: ruleType,
-        },
-      });
-    }
-
-    // 3. Delete any MerchantOverride record for this shop and ruleType
-    await prisma.merchantOverride.deleteMany({
-      where: {
-        shopId: shop.id,
-        ruleType: ruleType,
-      },
-    });
-
-    res.json({ success: true });
-  } catch (error) {
-    console.error('Delete override error:', error);
-    res.status(500).json({ error: 'Failed to delete ignored rule' });
-  }
-});
 
 export default router;
 
