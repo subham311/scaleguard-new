@@ -1,6 +1,7 @@
 import shopifyApi from '../config/shopify.js';
 import { decrypt } from '../utils/encryption.js';
 import { handleShopifyRateLimit, getRateLimitInfo } from '../utils/shopifyApiHelper.js';
+import prisma from '../config/database.js';
 
 export async function fetchShopifyData(shop) {
   console.log(`🛍️ [Shopify] Starting Admin API fetch for ${shop.shopDomain}`);
@@ -15,6 +16,15 @@ export async function fetchShopifyData(shop) {
   try {
     // Fetch products (Core for Audit Engine)
     const products = await fetchProducts(client);
+    
+    // Fetch collections for Ghost Listing detection (Phase 2.5)
+    let collectionMap = new Map();
+    try {
+      collectionMap = await fetchCollections(client);
+      console.log(`🧾 [Shopify] Built collection map with ${collectionMap.size} products for ${shop.shopDomain}`);
+    } catch (collError) {
+      console.error(`⚠️ [Shopify] Could not fetch collections for ${shop.shopDomain}:`, collError);
+    }
     
     // Fetch orders (Optional Layer for Performance Insights)
     let orders = [];
@@ -32,6 +42,7 @@ export async function fetchShopifyData(shop) {
     return {
       products,
       orders,
+      collectionMap,
       fetchedAt: new Date(),
     };
   } catch (error) {
@@ -149,4 +160,118 @@ async function fetchOrders(client) {
   } while (pageInfo);
 
   return orders;
+}
+
+/**
+ * Fetch all custom and smart collections, then fetch their products to build product->collection mapping
+ */
+async function fetchCollections(client) {
+  const collections = [];
+  
+  // 1. Fetch Custom Collections
+  let pageInfo = null;
+  do {
+    const params = { limit: 250, fields: 'id,title' };
+    if (pageInfo) params.page_info = pageInfo;
+
+    try {
+      const response = await handleShopifyRateLimit(async () => {
+        return await client.get({
+          path: 'custom_collections',
+          query: params,
+        });
+      });
+
+      if (response.body?.custom_collections) {
+        collections.push(...response.body.custom_collections);
+      }
+
+      const linkHeader = response.headers?.link;
+      pageInfo = linkHeader && linkHeader.includes('rel="next"')
+        ? new URL(linkHeader.match(/<([^>]+)>; rel="next"/)[1]).searchParams.get('page_info')
+        : null;
+    } catch (e) {
+      console.error(`⚠️ Error fetching custom collections:`, e);
+      pageInfo = null;
+    }
+  } while (pageInfo);
+
+  // 2. Fetch Smart Collections
+  pageInfo = null;
+  do {
+    const params = { limit: 250, fields: 'id,title' };
+    if (pageInfo) params.page_info = pageInfo;
+
+    try {
+      const response = await handleShopifyRateLimit(async () => {
+        return await client.get({
+          path: 'smart_collections',
+          query: params,
+        });
+      });
+
+      if (response.body?.smart_collections) {
+        collections.push(...response.body.smart_collections);
+      }
+
+      const linkHeader = response.headers?.link;
+      pageInfo = linkHeader && linkHeader.includes('rel="next"')
+        ? new URL(linkHeader.match(/<([^>]+)>; rel="next"/)[1]).searchParams.get('page_info')
+        : null;
+    } catch (e) {
+      console.error(`⚠️ Error fetching smart collections:`, e);
+      pageInfo = null;
+    }
+  } while (pageInfo);
+
+  console.log(`🛍️ [Shopify] Found ${collections.length} total collections (custom + smart)`);
+
+  // Cap collection fetching to avoid excessive API requests (max 50 collections)
+  const cappedCollections = collections.slice(0, 50);
+  if (collections.length > 50) {
+    console.warn(`⚠️ Store has ${collections.length} collections. Capping fetch at 50 to avoid rate limit issues.`);
+  }
+
+  const collectionMap = new Map(); // Map<string, string[]> (productId -> collectionIds)
+
+  // 3. For each collection, fetch its product IDs
+  for (const collection of cappedCollections) {
+    let collPageInfo = null;
+    do {
+      const params = { limit: 250, fields: 'id' };
+      if (collPageInfo) params.page_info = collPageInfo;
+
+      try {
+        const response = await handleShopifyRateLimit(async () => {
+          return await client.get({
+            path: `collections/${collection.id}/products`,
+            query: params,
+          });
+        });
+
+        if (response.body?.products) {
+          for (const p of response.body.products) {
+            const pId = String(p.id);
+            if (!collectionMap.has(pId)) {
+              collectionMap.set(pId, []);
+            }
+            collectionMap.get(pId).push(String(collection.id));
+          }
+        }
+
+        const linkHeader = response.headers?.link;
+        collPageInfo = linkHeader && linkHeader.includes('rel="next"')
+          ? new URL(linkHeader.match(/<([^>]+)>; rel="next"/)[1]).searchParams.get('page_info')
+          : null;
+      } catch (e) {
+        console.error(`⚠️ Error fetching products for collection ${collection.id}:`, e);
+        collPageInfo = null;
+      }
+      
+      // Delay to respect rate limits
+      await new Promise(resolve => setTimeout(resolve, 100));
+    } while (collPageInfo);
+  }
+
+  return collectionMap;
 }

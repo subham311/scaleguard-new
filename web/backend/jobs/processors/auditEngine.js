@@ -47,8 +47,8 @@ function isWeakTitle(title) {
   return false;
 }
 
-function getAbsolutePricingThreshold(productTitle) {
-  if (!productTitle) return 100000;
+function getPricingAnomaly(productTitle, price) {
+  if (!productTitle || price <= 0) return null;
   const title = productTitle.toLowerCase();
   
   const luxuryKeywords = [
@@ -56,20 +56,73 @@ function getAbsolutePricingThreshold(productTitle) {
     'antique', 'fine art', 'painting', 'sculpture', 'estate', 'property',
     'house', 'car', 'vehicle', 'porsche', 'ferrari', 'lamborghini'
   ];
-  
   const isLuxury = luxuryKeywords.some(kw => title.includes(kw));
-  if (isLuxury) return 1000000;
+  if (isLuxury) return null;
   
-  const standardRetailKeywords = [
+  // Extremely low price check
+  if (price >= 0.01 && price <= 0.99) {
+    return {
+      severity: 'CRITICAL',
+      reason: `Standalone price of £${price.toFixed(2)} is extremely low (under £1.00). This is likely a decimal formatting error or currency configuration mistake.`,
+      businessImpact: 'Extremely low pricing leads to massive loss of margin on orders, search ranking penalization, and low buyer trust.',
+    };
+  }
+  
+  const apparelKeywords = [
     'coat', 'jacket', 't-shirt', 'shirt', 'pants', 'trousers', 'shoes', 'sneakers',
-    'bag', 'backpack', 'wallet', 'belt', 'socks', 'dress', 'skirt', 'hoodie',
-    'makeup', 'lipstick', 'phone', 'charger', 'case', 'mug', 'cup', 'bottle'
+    'dress', 'skirt', 'hoodie', 'sweater', 'jeans', 'blouse', 'cardigan', 'shorts', 
+    'leggings', 'underwear', 'socks', 'scarf', 'hat', 'gloves', 'swimwear', 
+    'activewear', 'sportswear'
   ];
+  const isApparel = apparelKeywords.some(kw => title.includes(kw));
   
-  const isStandardRetail = standardRetailKeywords.some(kw => title.includes(kw));
-  if (isStandardRetail) return 30000;
+  if (isApparel) {
+    if (price >= 10000) {
+      return {
+        severity: 'CRITICAL',
+        threshold: 10000,
+        reason: `Standalone price of £${price.toLocaleString()} exceeds the critical apparel sanity threshold of £10,000.`,
+      };
+    }
+    if (price >= 3000) {
+      return {
+        severity: 'HIGH',
+        threshold: 3000,
+        reason: `Standalone price of £${price.toLocaleString()} exceeds the high apparel sanity threshold of £3,000.`,
+      };
+    }
+    if (price >= 1500) {
+      return {
+        severity: 'MEDIUM',
+        threshold: 1500,
+        reason: `Standalone price of £${price.toLocaleString()} exceeds the warning apparel sanity threshold of £1,500.`,
+      };
+    }
+  } else {
+    if (price >= 20000) {
+      return {
+        severity: 'CRITICAL',
+        threshold: 20000,
+        reason: `Standalone price of £${price.toLocaleString()} exceeds the critical general retail sanity threshold of £20,000.`,
+      };
+    }
+    if (price >= 5000) {
+      return {
+        severity: 'HIGH',
+        threshold: 5000,
+        reason: `Standalone price of £${price.toLocaleString()} exceeds the high general retail sanity threshold of £5,000.`,
+      };
+    }
+    if (price >= 3000) {
+      return {
+        severity: 'MEDIUM',
+        threshold: 3000,
+        reason: `Standalone price of £${price.toLocaleString()} exceeds the warning general retail sanity threshold of £3,000.`,
+      };
+    }
+  }
   
-  return 100000;
+  return null;
 }
 
 function isSerialTitle(title) {
@@ -99,6 +152,17 @@ function isSerialTitle(title) {
     const digitCount = (t.match(/\d/g) || []).length;
     const hasFiveDigitSeq = /\d{5,}/.test(t);
     if (hasFiveDigitSeq && (digitCount / nonSpaceChars.length) > 0.35) {
+      return true;
+    }
+  }
+
+  // NEW: Repeated numeric blocks pattern (e.g., "0001 0001", "123 456 789")
+  // If title has 2+ separate numeric blocks of 3+ digits each, AND combined digits >= 30% of title
+  const numericBlocks = t.match(/\d{3,}/g) || [];
+  if (numericBlocks.length >= 2) {
+    const totalDigits = numericBlocks.reduce((sum, block) => sum + block.length, 0);
+    const nonSpaceChars = t.replace(/\s+/g, '');
+    if (nonSpaceChars.length > 0 && (totalDigits / nonSpaceChars.length) > 0.3) {
       return true;
     }
   }
@@ -179,7 +243,7 @@ function buildScoreExplanations(issues, scores) {
     ['CATALOG_INCONSISTENCY', 'HIGH_FRAGMENTATION', 'INCONSISTENT_PRICE_POSITIONING', 'VARIANT_PRICE_GAP', 'COLLECTION_PRICE_OUTLIER'].includes(i.type)
   );
   const inventoryIssues = issues.filter(i =>
-    ['LAZY_INVENTORY', 'UNIFORM_INVENTORY', 'GHOST_LISTING', 'UNREALISTIC_INVENTORY'].includes(i.type)
+    ['UNIFORM_INVENTORY', 'GHOST_LISTING', 'UNREALISTIC_INVENTORY'].includes(i.type)
   );
   const perfIssues = issues.filter(i => i.type === 'HIGH_PERFORMANCE_LOW_QUALITY');
   const deadInventory = issues.filter(i => i.type === 'DEAD_INVENTORY');
@@ -230,7 +294,7 @@ function buildScoreExplanations(issues, scores) {
   let readinessExplanation = 'Readiness is a combined score based on catalog quality, visual trust, pricing integrity, inventory credibility, and scaling risk. ';
   const readinessParts = [];
   if (inventoryIssues.length > 0)
-    readinessParts.push(`${inventoryIssues.length} inventory anomaly(ies) detected (ghost listings, uniform/unrealistic stock, lazy imports)`);
+    readinessParts.push(`${inventoryIssues.length} inventory anomaly(ies) detected (ghost listings, uniform/unrealistic stock)`);
   if (perfIssues.length > 0)
     readinessParts.push(`${perfIssues.length} top-selling product(s) are missing visual trust`);
   if (deadInventory.length > 0)
@@ -477,20 +541,20 @@ export async function processAuditRun(jobData) {
           if (variant.price > maxPrice) maxPrice = variant.price;
 
           // Absolute Pricing Anomaly: context-aware dynamic safety threshold check
-          const pricingThreshold = getAbsolutePricingThreshold(product.title);
-          if (variant.price >= pricingThreshold) {
+          const anomaly = getPricingAnomaly(product.title, variant.price);
+          if (anomaly) {
             issues.push({
               auditRunId: auditRun.id,
               type: 'ABSOLUTE_PRICING_ANOMALY',
-              severity: 'CRITICAL',
+              severity: anomaly.severity,
               category: 'PRICING',
               affectedEntities: [variant.shopifyId],
               evidence: {
                 title: `${product.title} — ${variant.title}`,
                 price: variant.price,
-                threshold: pricingThreshold,
-                reason: `Standalone price of £${variant.price.toLocaleString()} exceeds the context-aware sanity threshold of £${pricingThreshold.toLocaleString()} for this product class.`,
-                businessImpact: 'Extremely unrealistic standalone pricing triggers critical catalog risk and blocks checkout conversions.',
+                threshold: anomaly.threshold || 0,
+                reason: anomaly.reason,
+                businessImpact: anomaly.businessImpact || 'Extremely unrealistic standalone pricing triggers critical catalog risk and blocks checkout conversions.',
                 confidence: 'HIGH',
               },
             });
@@ -501,38 +565,26 @@ export async function processAuditRun(jobData) {
         totalInventory += inv;
         inventoryValues.push(inv);
 
-        // Lazy inventory sentinel values
-        if (LAZY_INVENTORY_VALUES.has(inv)) {
-          issues.push({
-            auditRunId: auditRun.id,
-            type: 'LAZY_INVENTORY',
-            severity: 'MEDIUM',
-            category: 'INVENTORY',
-            affectedEntities: [variant.shopifyId],
-            evidence: {
-              title: `${product.title} — ${variant.title}`,
-              inventory: inv,
-              reason: `Inventory quantity ${inv} is a known bulk import / dropship sentinel value.`,
-              businessImpact: 'Artificial stock quantities reduce customer trust and signal low-review imports.',
-              confidence: 'HIGH',
-            },
-          });
-        }
-
-        // Unrealistic inventory
-        if (inv > UNREALISTIC_INVENTORY_THRESHOLD) {
+        // Enhanced UNREALISTIC_INVENTORY check (incorporating Lazy Inventory sentinel values)
+        if (inv > UNREALISTIC_INVENTORY_THRESHOLD || LAZY_INVENTORY_VALUES.has(inv)) {
+          const isLazyPattern = LAZY_INVENTORY_VALUES.has(inv);
           issues.push({
             auditRunId: auditRun.id,
             type: 'UNREALISTIC_INVENTORY',
-            severity: 'HIGH',
+            severity: isLazyPattern ? 'MEDIUM' : 'HIGH',
             category: 'INVENTORY',
             affectedEntities: [variant.shopifyId],
             evidence: {
               title: `${product.title} — ${variant.title}`,
               inventory: inv,
               threshold: UNREALISTIC_INVENTORY_THRESHOLD,
-              reason: `Inventory quantity appears unusually high for a retail storefront and may reduce storefront trust perception or resemble supplier-fed catalog patterns.`,
-              businessImpact: 'Extremely high stock may look artificial and reduce customer trust.',
+              isLazyPattern,
+              reason: isLazyPattern
+                ? `Inventory quantity ${inv} is a known bulk import / dropship placeholder value (999, 9999, or 10,000).`
+                : `Inventory quantity appears unusually high for a retail storefront and may reduce storefront trust perception.`,
+              businessImpact: isLazyPattern
+                ? 'Placeholder stock values reduce customer trust and signal low-review imports.'
+                : 'Extremely high stock may look artificial and reduce customer trust.',
               confidence: 'HIGH',
             },
           });
@@ -774,7 +826,7 @@ export async function processAuditRun(jobData) {
     const perfRiskIssues      = filteredIssues.filter(i => i.type === 'HIGH_PERFORMANCE_LOW_QUALITY');
     const criticalIssues      = filteredIssues.filter(i => i.severity === 'CRITICAL');
     const inventoryIssues     = filteredIssues.filter(i =>
-      ['LAZY_INVENTORY', 'UNIFORM_INVENTORY', 'GHOST_LISTING', 'UNREALISTIC_INVENTORY'].includes(i.type)
+      ['UNIFORM_INVENTORY', 'GHOST_LISTING', 'UNREALISTIC_INVENTORY'].includes(i.type)
     );
 
     const scores = {

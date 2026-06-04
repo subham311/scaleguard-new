@@ -78,6 +78,8 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
       conversionReadiness: 0,
     };
 
+    let criticalIssuesExist = false;
+
     // Score explanations ("why") – populated after audit issues are loaded
     let scoreExplanations = {
       dataQuality: { explanation: 'No audit data yet. Run a sync to get your first report.' },
@@ -106,6 +108,7 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
     if (latestAudit) {
       // Recalculate scores and verdict on filtered issues dynamically
       const issues = latestAudit.issues.filter(i => !ignoredRuleTypes.has(i.type));
+      criticalIssuesExist = issues.some(i => i.severity === 'CRITICAL');
       
       // Calculate deductions
       const criticalIssues = issues.filter(i => i.severity === 'CRITICAL');
@@ -121,7 +124,7 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
       );
       const perfRiskIssues = issues.filter(i => i.type === 'HIGH_PERFORMANCE_LOW_QUALITY');
       const inventoryIssues = issues.filter(i =>
-        ['LAZY_INVENTORY', 'UNIFORM_INVENTORY', 'GHOST_LISTING', 'UNREALISTIC_INVENTORY'].includes(i.type)
+        ['UNIFORM_INVENTORY', 'GHOST_LISTING', 'UNREALISTIC_INVENTORY'].includes(i.type)
       );
       const deadInventoryIssues = issues.filter(i => i.type === 'DEAD_INVENTORY');
 
@@ -185,6 +188,21 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
         deadInventoryIssues.length > 0 && `${deadInventoryIssues.length} product(s) have high stock but zero sales`,
       ].filter(Boolean);
 
+      // Conversion Readiness: Weighted average + performance & critical penalties
+      const baseReadiness = (scores.productDataQuality * 0.4) + (scores.visualTrust * 0.4) + (scores.catalogConsistency * 0.2);
+      const performancePenalty = perfRiskIssues.length * 20; // Heavier penalty for failing top sellers
+      
+      let finalReadiness = Math.round(Math.max(0, baseReadiness - performancePenalty));
+
+      // CRITICAL FAIL-CLOSED LOGIC: 
+      // If any critical issues exist (Pricing Errors, High Performance Quality Risk), 
+      // the score cannot exceed 45% (High Risk) regardless of other quality scores.
+      if (criticalIssues.length > 0) {
+        finalReadiness = Math.min(finalReadiness, 45);
+      }
+      
+      scores.conversionReadiness = finalReadiness;
+
       scoreExplanations = {
         dataQuality: {
           score: scores.productDataQuality,
@@ -203,21 +221,9 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
           explanation: `Readiness is a combined score based on catalog quality, visual trust, pricing integrity, inventory credibility, and scaling risk. ${rParts.length === 0 ? 'No critical inventory or performance risks found.' : 'Score impacted because ' + rParts.join(', and ') + '.'}`,
         },
       };
-      
-      // Conversion Readiness: Weighted average + performance & critical penalties
-      const baseReadiness = (scores.productDataQuality * 0.4) + (scores.visualTrust * 0.4) + (scores.catalogConsistency * 0.2);
-      const performancePenalty = perfRiskIssues.length * 20; // Heavier penalty for failing top sellers
-      
-      let finalReadiness = Math.round(Math.max(0, baseReadiness - performancePenalty));
 
-      // CRITICAL FAIL-CLOSED LOGIC: 
-      // If any critical issues exist (Pricing Errors, High Performance Quality Risk), 
-      // the score cannot exceed 45% (High Risk) regardless of other quality scores.
-      if (criticalIssues.length > 0) {
-        finalReadiness = Math.min(finalReadiness, 45);
-      }
-      
-      scores.conversionReadiness = finalReadiness;
+      // Severity sort order for max-severity grouping
+      const SEVERITY_RANK = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
 
       // Group issues by type to avoid repeating the same issue type multiple times
       const groupedIssues = issues.reduce((acc, issue) => {
@@ -225,12 +231,18 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
           acc[issue.type] = {
             id: issue.id, // Use the first issue ID as the group ID
             type: issue.type,
-            severity: issue.severity, // Assume same severity for same type
+            severity: issue.severity, // Start with first severity seen
             affectedEntities: new Set(issue.affectedEntities || []),
           };
         } else {
           // Combine affected entities
           (issue.affectedEntities || []).forEach(e => acc[issue.type].affectedEntities.add(e));
+          // Escalate to highest severity seen across all issues of this type
+          const currentRank = SEVERITY_RANK[acc[issue.type].severity] ?? 4;
+          const newRank = SEVERITY_RANK[issue.severity] ?? 4;
+          if (newRank < currentRank) {
+            acc[issue.type].severity = issue.severity;
+          }
         }
         return acc;
       }, {});
@@ -281,18 +293,15 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
         } else if (issueGroup.type === 'DEAD_INVENTORY') {
           recommendation = 'Capital Risk: High stock levels with zero sales in 60 days. Consider markdowns or clearing this inventory to free capital for better-performing items.';
           evidence = `${affectedEntitiesArray.length} stagnant product(s) are tying up warehouse capital.`;
-        } else if (issueGroup.type === 'LAZY_INVENTORY') {
-          recommendation = 'Commercial Trust Risk: Inventory quantities of 999, 9999, or 10,000 are classic dropship placeholders. Update to real stock levels immediately to avoid low-trust perception.';
-          evidence = `${affectedEntitiesArray.length} variant(s) carry known lazy import sentinel inventory values.`;
         } else if (issueGroup.type === 'UNIFORM_INVENTORY') {
           recommendation = 'All variants share identical inventory values. This may indicate supplier-fed inventory feeds, bulk imports, or inventory levels that have not been reviewed manually.';
           evidence = `${affectedEntitiesArray.length} product(s) have 4+ variants all holding identical stock.`;
         } else if (issueGroup.type === 'UNREALISTIC_INVENTORY') {
-          recommendation = 'Inventory quantity appears unusually high for a retail storefront and may reduce storefront trust perception or resemble supplier-fed catalog patterns.';
-          evidence = `${affectedEntitiesArray.length} variant(s) show unusual inventory quantities.`;
+          recommendation = 'Inventory quantity is either placeholder stock (like 999, 9999, or 10,000) or appears unusually high for a storefront. This reduces buyer trust and may look like dropshipping. Update to actual stock.';
+          evidence = `${affectedEntitiesArray.length} variant(s) show placeholder or unusually high inventory.`;
         } else if (issueGroup.type === 'GHOST_LISTING') {
-          recommendation = 'This product is visible but cannot be purchased due to zero inventory. This creates wasted browsing and may reduce customer confidence. Enable continue-selling, restock, or unpublish.';
-          evidence = `${affectedEntitiesArray.length} published product(s) have zero total inventory.`;
+          recommendation = 'This product is published but not assigned to any storefront collection. Customers cannot discover it through normal browsing or navigation. Assign it to a collection or unpublish it to clean up your catalog.';
+          evidence = `${affectedEntitiesArray.length} product(s) have no collection assignment.`;
         } else if (issueGroup.type === 'HIGH_FRAGMENTATION') {
           recommendation = 'Niche Coherence Risk (Flea Market Effect): Your catalog spans too many product types for its size. Buyers cannot trust what your store stands for. Consolidate or split into focused collections.';
           evidence = 'Store has fewer than 50 products but more than 8 distinct collections — signals unfocused positioning.';
@@ -303,8 +312,8 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
           recommendation = 'Price Positioning Risk: Your catalog price range is wide. Buyers at the low end and high end may be completely different audiences — review whether this is intentional.';
           evidence = 'The highest-priced product is more than 10× the median catalog price.';
         } else if (issueGroup.type === 'ABSOLUTE_PRICING_ANOMALY') {
-          recommendation = 'Critical: Standalone price is extremely unrealistic. Accidental pricing mistakes (e.g. adding extra zeros) can block checkouts and hurt storefront trust. Review immediately in Shopify Admin.';
-          evidence = `Standalone price exceeds the context-aware sanity threshold for this product class.`;
+          recommendation = 'Pricing Risk: The product price is either extremely low (under £1.00) or exceeds standard sanity thresholds for its category. Review pricing in Shopify Admin to prevent margins loss or checkout conversion issues.';
+          evidence = `${affectedEntitiesArray.length} variant(s) have absolute pricing anomalies.`;
         } else if (issueGroup.type === 'SERIAL_PRODUCT_TITLE') {
           recommendation = 'This product title contains excessive numeric sequences or serial-like patterns. This makes your store look like a low-quality catalog dump rather than a curated retail brand. Rewrite with readable titles.';
           evidence = 'Title carries long numeric blocks or a serial-number pattern.';
@@ -369,7 +378,6 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
     let verdict = 'Not Ready';
     let storeRecommendation = '';
     const mainScore = scores.conversionReadiness;
-    const criticalIssuesExist = latestAudit?.issues.some(i => i.severity === 'CRITICAL');
     
     if (mainScore >= 85) {
       verdict = 'Ready to Scale: Proceed with ad spend';

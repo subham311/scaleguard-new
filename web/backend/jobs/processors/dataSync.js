@@ -30,8 +30,8 @@ function resolvePlanLimits(subscription) {
   return DEFAULT_LIMITS;
 }
 
-function getAbsolutePricingThreshold(productTitle) {
-  if (!productTitle) return 100000;
+function getPricingAnomalySeverity(productTitle, price) {
+  if (!productTitle || price <= 0) return null;
   const title = productTitle.toLowerCase();
   
   const luxuryKeywords = [
@@ -39,20 +39,33 @@ function getAbsolutePricingThreshold(productTitle) {
     'antique', 'fine art', 'painting', 'sculpture', 'estate', 'property',
     'house', 'car', 'vehicle', 'porsche', 'ferrari', 'lamborghini'
   ];
-  
   const isLuxury = luxuryKeywords.some(kw => title.includes(kw));
-  if (isLuxury) return 1000000;
+  if (isLuxury) return null; // exempt
   
-  const standardRetailKeywords = [
+  // Check for extremely low price (decimal mistake)
+  if (price >= 0.01 && price <= 0.99) {
+    return 'CRITICAL';
+  }
+  
+  const apparelKeywords = [
     'coat', 'jacket', 't-shirt', 'shirt', 'pants', 'trousers', 'shoes', 'sneakers',
-    'bag', 'backpack', 'wallet', 'belt', 'socks', 'dress', 'skirt', 'hoodie',
-    'makeup', 'lipstick', 'phone', 'charger', 'case', 'mug', 'cup', 'bottle'
+    'dress', 'skirt', 'hoodie', 'sweater', 'jeans', 'blouse', 'cardigan', 'shorts', 
+    'leggings', 'underwear', 'socks', 'scarf', 'hat', 'gloves', 'swimwear', 
+    'activewear', 'sportswear'
   ];
+  const isApparel = apparelKeywords.some(kw => title.includes(kw));
   
-  const isStandardRetail = standardRetailKeywords.some(kw => title.includes(kw));
-  if (isStandardRetail) return 30000;
+  if (isApparel) {
+    if (price >= 10000) return 'CRITICAL';
+    if (price >= 3000) return 'HIGH';
+    if (price >= 1500) return 'WARNING';
+  } else {
+    if (price >= 20000) return 'CRITICAL';
+    if (price >= 5000) return 'HIGH';
+    if (price >= 3000) return 'WARNING';
+  }
   
-  return 100000;
+  return null;
 }
 
 function isInvalidTitle(title) {
@@ -94,10 +107,21 @@ function isSerialTitle(title) {
     }
   }
 
+  // NEW: Repeated numeric blocks pattern (e.g., "0001 0001", "123 456 789")
+  // If title has 2+ separate numeric blocks of 3+ digits each, AND combined digits >= 30% of title
+  const numericBlocks = t.match(/\d{3,}/g) || [];
+  if (numericBlocks.length >= 2) {
+    const totalDigits = numericBlocks.reduce((sum, block) => sum + block.length, 0);
+    const nonSpaceChars = t.replace(/\s+/g, '');
+    if (nonSpaceChars.length > 0 && (totalDigits / nonSpaceChars.length) > 0.3) {
+      return true;
+    }
+  }
+
   return false;
 }
 
-function calculateProductPriority(product) {
+function calculateProductPriority(product, collectionMap) {
   let score = 0;
   
   const title = product.title || '';
@@ -124,9 +148,13 @@ function calculateProductPriority(product) {
       if (price < minPrice) minPrice = price;
       if (price > maxPrice) maxPrice = price;
       
-      const thresh = getAbsolutePricingThreshold(title);
-      if (price >= thresh) {
-        score += 1000; // CRITICAL: ABSOLUTE_PRICING_ANOMALY
+      const pricingAnomaly = getPricingAnomalySeverity(title, price);
+      if (pricingAnomaly === 'CRITICAL') {
+        score += 1000;
+      } else if (pricingAnomaly === 'HIGH') {
+        score += 500;
+      } else if (pricingAnomaly === 'WARNING') {
+        score += 100;
       }
     }
     
@@ -135,8 +163,12 @@ function calculateProductPriority(product) {
     }
   }
   
-  if (isPublished && totalInventory === 0) {
-    score += 1000; // CRITICAL: GHOST_LISTING
+  // Ghost Listing: published product with no collection assignment (new definition)
+  if (isPublished) {
+    const productCollections = collectionMap ? collectionMap.get(String(product.id)) : null;
+    if (!productCollections || productCollections.length === 0) {
+      score += 1000; // CRITICAL: GHOST_LISTING
+    }
   }
   
   if (imageCount === 0) {
@@ -201,8 +233,9 @@ export async function processDataSync(jobData) {
     // ── PLAN-LIMITED PRODUCT INGESTION ─────────────────────────────────────
     if (shopifyData?.products) {
       // Dynamic Discovery Pass & Risk-First Ingestion
+      // Pass collectionMap so Ghost Listing priority uses the new definition (no collections, not zero inventory)
       const prioritizedProducts = shopifyData.products
-        .map(p => ({ product: p, priority: calculateProductPriority(p) }))
+        .map(p => ({ product: p, priority: calculateProductPriority(p, shopifyData.collectionMap) }))
         .sort((a, b) => b.priority - a.priority)
         .map(item => item.product);
 
@@ -243,18 +276,14 @@ export async function processDataSync(jobData) {
             imageCount: fullImageCount,
             published: product.published_at !== null && product.status === 'active',
             // Store collection IDs if present (used for fragmentation analysis)
-            collectionIds: product.collections
-              ? product.collections.map(c => c.id)
-              : (product.collection_id ? [product.collection_id] : null),
+            collectionIds: (shopifyData.collectionMap && shopifyData.collectionMap.get(String(product.id))) || [],
           },
           update: {
             title: product.title,
             description: product.body_html,
             imageCount: fullImageCount,
             published: product.published_at !== null && product.status === 'active',
-            collectionIds: product.collections
-              ? product.collections.map(c => c.id)
-              : (product.collection_id ? [product.collection_id] : null),
+            collectionIds: (shopifyData.collectionMap && shopifyData.collectionMap.get(String(product.id))) || [],
           },
         });
 
