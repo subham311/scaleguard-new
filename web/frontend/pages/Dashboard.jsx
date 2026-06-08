@@ -835,7 +835,20 @@ export default function Dashboard() {
                     filteredProducts.map(({ id, title, issueType, severity, performance }, index) => (
                       <IndexTable.Row id={id} key={id} position={index}>
                         <IndexTable.Cell>
-                          <span style={{ fontSize: "13px", fontWeight: 600, color: colors.textPrimary }}>{title}</span>
+                          <div 
+                            title={title}
+                            style={{ 
+                              fontSize: "13px", 
+                              fontWeight: 600, 
+                              color: colors.textPrimary,
+                              maxWidth: "300px",
+                              whiteSpace: "nowrap",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis"
+                            }}
+                          >
+                            {title}
+                          </div>
                         </IndexTable.Cell>
                         <IndexTable.Cell>
                           <span style={{ fontSize: "13px", color: issueType === "Healthy" ? colors.success : colors.textSecondary }}>
