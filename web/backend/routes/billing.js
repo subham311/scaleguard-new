@@ -636,9 +636,6 @@ router.post('/create-charge', authenticateShop, async (req, res) => {
     });
     
     const trimmedToken = accessToken.trim();
-    /* 
-    // BYPASSING SHOPIFY BILLING API DUE TO 422 ERROR
-    // "It appears that this application is currently owned by a Shop..."
     const chargeResponse = await fetch(chargeUrl, {
       method: 'POST',
       headers: {
@@ -649,54 +646,6 @@ router.post('/create-charge', authenticateShop, async (req, res) => {
     });
 
     const responseText = await chargeResponse.text();
-    */
-
-    // SIMULATED SUCCESS: Update local database directly
-    console.log(`🚀 BYPASS: Simulating successful billing for ${plan} plan`);
-    
-    await prisma.subscription.upsert({
-      where: { shopId: req.shop.id },
-      update: {
-        plan: planName,
-        pricingPlanId: dbPlan.id,
-        status: 'ACTIVE',
-        chargeId: `simulated_${Date.now()}`,
-      },
-      create: {
-        shopId: req.shop.id,
-        plan: planName,
-        pricingPlanId: dbPlan.id,
-        status: 'ACTIVE',
-        chargeId: `simulated_${Date.now()}`,
-      },
-    });
-
-    // Update shop maturity level if needed
-    await prisma.shop.update({
-      where: { id: req.shop.id },
-      data: { maturityLevel: 'ACTIVE' }
-    });
-
-    // Automatically trigger a background data sync to update catalog limits
-    try {
-      await prisma.job.create({
-        data: {
-          shopId: req.shop.id,
-          jobType: 'DATA_SYNC',
-          status: 'PENDING',
-        },
-      });
-      console.log('✅ Background data sync triggered for plan upgrade');
-    } catch (jobError) {
-      console.error('⚠️ Failed to trigger background data sync:', jobError.message);
-    }
-
-    return res.json({
-      success: true,
-      message: `Simulated ${planName} plan activation successful`,
-      plan: planName,
-      status: 'ACTIVE'
-    });
     console.log('Charge response status:', chargeResponse.status);
     console.log('Charge response headers:', Object.fromEntries(chargeResponse.headers.entries()));
     console.log('Charge response body (full):', responseText);
