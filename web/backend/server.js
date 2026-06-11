@@ -13,6 +13,7 @@ import jobRoutes from './routes/jobs.js';
 import healthRoutes from './routes/health.js';
 import diagnosticsRoutes from './routes/diagnostics.js';
 import { startCronWorker } from './jobs/cronWorker.js';
+import { startScheduler } from './jobs/scheduler.js';
 import { seedPricingPlans } from './jobs/seedPricingPlans.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { setupGracefulShutdown } from './utils/gracefulShutdown.js';
@@ -160,6 +161,14 @@ const server = app.listen(PORT, '0.0.0.0', () => {
     console.log('✅ Database-backed cron worker enabled');
   } catch (error) {
     console.warn('⚠️  Failed to start cron worker:', error.message);
+  }
+
+  // Start tier-based job scheduler
+  try {
+    startScheduler();
+    console.log('✅ Tier-based job scheduler enabled');
+  } catch (error) {
+    console.warn('⚠️  Failed to start job scheduler:', error.message);
   }
 
   // Seed pricing plans

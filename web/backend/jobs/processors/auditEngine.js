@@ -335,9 +335,9 @@ export async function processAuditRun(jobData) {
       if (planName === 'LIGHT') {
         fallbackPlan.maxProducts = 20; fallbackPlan.imagesPerProduct = 2;
       } else if (planName === 'GROWTH') {
-        fallbackPlan.maxProducts = 75; fallbackPlan.imagesPerProduct = 5;
+        fallbackPlan.maxProducts = 75; fallbackPlan.imagesPerProduct = 3;
       } else if (planName === 'PRO') {
-        fallbackPlan.maxProducts = 200; fallbackPlan.imagesPerProduct = 10;
+        fallbackPlan.maxProducts = 200; fallbackPlan.imagesPerProduct = 4;
       }
     }
     const plan = shop.subscription?.pricingPlan || fallbackPlan;

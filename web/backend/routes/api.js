@@ -412,8 +412,8 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
 
     const PLAN_LIMITS = {
       LIGHT: { maxProducts: 20, imagesPerProduct: 2, scanFrequency: 'Weekly' },
-      GROWTH: { maxProducts: 75, imagesPerProduct: 5, scanFrequency: 'Daily' },
-      PRO: { maxProducts: 200, imagesPerProduct: 10, scanFrequency: 'Every 3 Hours' }
+      GROWTH: { maxProducts: 75, imagesPerProduct: 3, scanFrequency: 'Daily' },
+      PRO: { maxProducts: 200, imagesPerProduct: 4, scanFrequency: 'Every 3 Hours' }
     };
     const defaultLimits = PLAN_LIMITS[planName] || PLAN_LIMITS.LIGHT;
 

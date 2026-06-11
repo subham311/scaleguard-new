@@ -5,59 +5,63 @@ const prisma = new PrismaClient();
 const pricingPlans = [
   {
     name: 'Light',
-    price: 19,
+    price: 19.99,
     description: 'Essential commercial risk checks for new stores getting started.',
     maxProducts: 20,
     imagesPerProduct: 2,
     auditType: 'BASIC',
     scanFrequency: 'WEEKLY',
     features: [
-      'Up to 20 products analyzed per audit',
-      '2 images analyzed per product',
-      'Basic catalog audit (pricing, descriptions, images)',
-      'Weekly sync & risk scan',
-      'Top 5 risk issues flagged',
-      'Standard support'
+      'Store Readiness Audit',
+      'Data Quality Analysis',
+      'Visual Trust Detection',
+      'Catalog Consistency Checks',
+      'Up to 20 Products Monitored',
+      '2 Images Analyzed Per Product',
+      'Weekly Audits',
+      'Readiness Score'
     ],
     isPopular: false,
     isActive: true
   },
   {
     name: 'Growth',
-    price: 49,
+    price: 49.99,
     description: 'Advanced commercial risk detection and priority fixes to scale fast.',
     maxProducts: 75,
     imagesPerProduct: 3,
     auditType: 'FULL',
     scanFrequency: 'CONTINUOUS',
     features: [
-      'Up to 75 products analyzed per audit',
-      '3 images analyzed per product',
-      'Continuous delta-monitoring',
-      'Inventory anomaly detection (lazy imports, ghost listings)',
-      'Niche consistency & fragmentation checks',
-      'Priority fix recommendations',
-      'Priority support'
+      'Commercial Risk Intelligence',
+      'Product-Level Recommendations',
+      'Conversion Risk Detection',
+      'Inventory Anomaly Detection',
+      'Up to 75 Products Monitored',
+      '3 Images Analyzed Per Product',
+      'Daily Audits',
+      'Priority Fix Queue'
     ],
     isPopular: true,
     isActive: true
   },
   {
     name: 'Pro',
-    price: 99,
+    price: 99.99,
     description: 'Full-suite commercial intelligence engine for high-volume merchants.',
     maxProducts: 200,
     imagesPerProduct: 4,
     auditType: 'DEEPER',
     scanFrequency: 'FASTER',
     features: [
-      'Up to 200 products analyzed per audit',
-      '4 images analyzed per product',
-      'Deeper commercial risk audit',
-      'Price positioning & variance intelligence',
-      'Performance-layer risk detection',
-      'Product-level drilldown',
-      'Dedicated support'
+      'Full Catalog Intelligence',
+      'Advanced Risk Detection',
+      'Product-Level Drilldown',
+      'Commercial Scaling Verdict',
+      'Up to 200 Products Monitored',
+      '4 Images Analyzed Per Product',
+      'Audits Every 3 Hours',
+      'Safe-To-Scale Assessment'
     ],
     isPopular: false,
     isActive: true

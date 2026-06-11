@@ -13,10 +13,10 @@ const JOB_TYPES = {
 export function startScheduler() {
   console.log('📅 Starting tier-based job scheduler...');
 
-  // 1. Hourly: 'FASTER' (PRO Plan) - "Real-time audit engine"
-  // Runs at the top of every hour
-  cron.schedule('0 * * * *', async () => {
-    console.log('⏰ Hourly scheduler triggered (FASTER scan frequency)');
+  // 1. Every 3 Hours: 'FASTER' (PRO Plan) - "3-hourly sync"
+  // Runs every 3 hours
+  cron.schedule('0 */3 * * *', async () => {
+    console.log('⏰ 3-Hourly scheduler triggered (FASTER scan frequency)');
     await scheduleDataSyncs('FASTER');
   });
 

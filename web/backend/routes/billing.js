@@ -7,8 +7,8 @@ import { authenticateShop, requirePlan } from '../middleware/auth.js';
 const router = express.Router();
 
 const PLAN_PRICES = {
-  LIGHT: { amount: 9.99, name: 'Light Plan' },
-  GROWTH: { amount: 29.99, name: 'Growth Plan' },
+  LIGHT: { amount: 19.99, name: 'Light Plan' },
+  GROWTH: { amount: 49.99, name: 'Growth Plan' },
   PRO: { amount: 99.99, name: 'Pro Plan' },
 };
 

@@ -21,6 +21,7 @@ import jobRoutes from './backend/routes/jobs.js';
 import healthRoutes from './backend/routes/health.js';
 import diagnosticsRoutes from './backend/routes/diagnostics.js';
 import { startCronWorker } from './backend/jobs/cronWorker.js';
+import { startScheduler } from './backend/jobs/scheduler.js';
 import { seedPricingPlans } from './backend/jobs/seedPricingPlans.js';
 import { errorHandler, notFoundHandler } from './backend/middleware/errorHandler.js';
 import { processDataSync } from './backend/jobs/processors/dataSync.js';
@@ -181,6 +182,7 @@ app.listen(PORT, () => {
   // Start database-backed cron worker
   try {
     startCronWorker();
+    startScheduler();
     seedPricingPlans();
   } catch (error) {
     console.warn('⚠️  Failed to start background jobs:', error.message);
