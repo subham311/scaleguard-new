@@ -35,6 +35,15 @@ export async function fetchShopifyData(shop) {
       console.warn(`⚠️ [Shopify] Could not fetch orders for ${shop.shopDomain}. Check read_orders scope.`);
     }
     
+    // Fetch shop primary locale (for language fallback)
+    let primaryLocale = 'en';
+    try {
+      primaryLocale = await fetchShopLocale(client);
+      console.log(`ℹ️ [Shopify] Fetched shop primary locale: ${primaryLocale} for ${shop.shopDomain}`);
+    } catch (localeError) {
+      console.warn(`⚠️ [Shopify] Could not fetch shop locale for ${shop.shopDomain}:`, localeError);
+    }
+
     console.log(
       `🧾 [Shopify] Completed Admin API fetch for ${shop.shopDomain}: ` +
         `${products?.length || 0} products, ${orders.length} orders`
@@ -43,6 +52,7 @@ export async function fetchShopifyData(shop) {
       products,
       orders,
       collectionMap,
+      primaryLocale,
       fetchedAt: new Date(),
     };
   } catch (error) {
@@ -274,4 +284,16 @@ async function fetchCollections(client) {
   }
 
   return collectionMap;
+}
+
+/**
+ * Fetch shop details to get the primary locale of the store
+ */
+async function fetchShopLocale(client) {
+  const response = await handleShopifyRateLimit(async () => {
+    return await client.get({
+      path: 'shop',
+    });
+  });
+  return response.body?.shop?.primary_locale || 'en';
 }

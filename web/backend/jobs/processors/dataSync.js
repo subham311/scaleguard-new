@@ -1,5 +1,6 @@
 import prisma from '../../config/database.js';
 import { fetchShopifyData } from '../../services/shopifyDataService.js';
+import { detectProductLanguage } from '../../utils/languageDetector.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  PLAN LIMITS — mirrors PricingPlan table values as a safe-fallback
@@ -265,6 +266,9 @@ export async function processDataSync(jobData) {
         // Get the full product image count
         const fullImageCount = Array.isArray(product.images) ? product.images.length : 0;
 
+        // Detect product language at ingestion time
+        const { lang: detectedLang } = detectProductLanguage(product.title, product.body_html);
+
         // Upsert product — store full image count and storefront published status
         const savedProduct = await prisma.product.upsert({
           where: { shopifyId: String(product.id) },
@@ -275,6 +279,7 @@ export async function processDataSync(jobData) {
             description: product.body_html,
             imageCount: fullImageCount,
             published: product.published_at !== null && product.status === 'active',
+            detectedLanguage: detectedLang,
             // Store collection IDs if present (used for fragmentation analysis)
             collectionIds: (shopifyData.collectionMap && shopifyData.collectionMap.get(String(product.id))) || [],
           },
@@ -283,6 +288,7 @@ export async function processDataSync(jobData) {
             description: product.body_html,
             imageCount: fullImageCount,
             published: product.published_at !== null && product.status === 'active',
+            detectedLanguage: detectedLang,
             collectionIds: (shopifyData.collectionMap && shopifyData.collectionMap.get(String(product.id))) || [],
           },
         });
@@ -388,6 +394,7 @@ export async function processDataSync(jobData) {
       data: { 
         dataCollectedAt: new Date(),
         totalProductsCount: shopifyData?.products?.length || 0,
+        primaryLocale: shopifyData?.primaryLocale || 'en',
       },
     });
 

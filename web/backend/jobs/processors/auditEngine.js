@@ -1,4 +1,9 @@
 import prisma from '../../config/database.js';
+import {
+  detectProductLanguage,
+  isGenericDescriptionForLang,
+  getStopWords
+} from '../../utils/languageDetector.js';
 
 const LAZY_INVENTORY_VALUES = new Set([999, 9999, 10000]);
 const DESCRIPTION_MIN_CHARS = 350; // ~70 words
@@ -7,11 +12,6 @@ const UNREALISTIC_INVENTORY_THRESHOLD = 5000;
 
 // Severity sort order
 const SEVERITY_ORDER = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
-
-const GENERIC_DESCRIPTION_KEYWORDS = [
-  'lorem ipsum', 'product description', 'coming soon', 'description here',
-  'add your description', 'no description', 'tbd', 'to be added',
-];
 
 function rawTextLength(html) {
   if (!html) return 0;
@@ -38,11 +38,12 @@ function isInvalidTitle(title) {
   return false;
 }
 
-function isWeakTitle(title) {
+function isWeakTitle(title, lang = 'en') {
   if (!title) return false;
   const t = title.trim();
   if (t.length < 5) return true;
-  const words = t.split(/\s+/).filter(w => w.length > 1);
+  const minWordLen = lang === 'en' ? 2 : 1; // allow single-char words in non-English
+  const words = t.split(/\s+/).filter(w => w.length >= minWordLen);
   if (words.length < 3) return true;
   return false;
 }
@@ -170,7 +171,7 @@ function isSerialTitle(title) {
   return false;
 }
 
-function isKeywordStuffedTitle(title) {
+function isKeywordStuffedTitle(title, lang = 'en') {
   if (!title) return false;
   const t = title.trim();
   const tLower = t.toLowerCase();
@@ -184,9 +185,11 @@ function isKeywordStuffedTitle(title) {
   }
 
   // 2. Repetitive wording (duplicate words of length >= 3)
+  const stopWords = getStopWords(lang);
   const words = tLower.split(/[\s,\|/\-_]+/).filter(w => w.length >= 3);
   const wordCounts = {};
   for (const w of words) {
+    if (stopWords.includes(w)) continue; // ignore common language-specific function words
     wordCounts[w] = (wordCounts[w] || 0) + 1;
     if (wordCounts[w] >= 3) {
       return true;
@@ -202,12 +205,6 @@ function isKeywordStuffedTitle(title) {
   }
 
   return false;
-}
-
-function isGenericDescription(html) {
-  if (!html) return false;
-  const text = html.replace(/<[^>]*>?/gm, '').toLowerCase().trim();
-  return GENERIC_DESCRIPTION_KEYWORDS.some(kw => text.includes(kw));
 }
 
 function isDimensionalOrQuantityProduct(variants) {
@@ -353,6 +350,11 @@ export async function processAuditRun(jobData) {
     for (const product of products) {
       const variantCount = product.variants.length;
 
+      // Determine product language (prefer cached detectedLanguage, fallback to detection or shop locale)
+      const productLang = product.detectedLanguage 
+        || shop.primaryLocale 
+        || detectProductLanguage(product.title, product.description).lang;
+
       // ── 1. TITLE VALIDATION ──────────────────────────────────────────────
       if (isInvalidTitle(product.title)) {
         issues.push({
@@ -368,7 +370,7 @@ export async function processAuditRun(jobData) {
             confidence: 'HIGH',
           },
         });
-      } else if (isWeakTitle(product.title)) {
+      } else if (isWeakTitle(product.title, productLang)) {
         issues.push({
           auditRunId: auditRun.id,
           type: 'WEAK_PRODUCT_TITLE',
@@ -378,6 +380,7 @@ export async function processAuditRun(jobData) {
           evidence: {
             title: product.title,
             wordCount: product.title.trim().split(/\s+/).filter(Boolean).length,
+            detectedLanguage: productLang,
             reason: 'Title is too short or vague to support search, trust, or purchase intent.',
             businessImpact: 'Weak titles reduce SEO performance and buyer confidence.',
             confidence: 'HIGH',
@@ -402,7 +405,7 @@ export async function processAuditRun(jobData) {
         });
       }
 
-      if (isKeywordStuffedTitle(product.title)) {
+      if (isKeywordStuffedTitle(product.title, productLang)) {
         issues.push({
           auditRunId: auditRun.id,
           type: 'KEYWORD_STUFFED_TITLE',
@@ -411,6 +414,7 @@ export async function processAuditRun(jobData) {
           affectedEntities: [product.shopifyId],
           evidence: {
             title: product.title,
+            detectedLanguage: productLang,
             reason: 'Title appears keyword-stuffed or overloaded with repetitive wording or dividers. While title length itself is fine, overloaded structures look unprofessional.',
             businessImpact: 'Keyword stuffing harms storefront clarity and brand trust.',
             confidence: 'HIGH',
@@ -436,7 +440,7 @@ export async function processAuditRun(jobData) {
             confidence: 'HIGH',
           },
         });
-      } else if (isGenericDescription(product.description)) {
+      } else if (isGenericDescriptionForLang(product.description, productLang)) {
         issues.push({
           auditRunId: auditRun.id,
           type: 'GENERIC_DESCRIPTION',
@@ -446,6 +450,7 @@ export async function processAuditRun(jobData) {
           evidence: {
             title: product.title,
             descriptionLength: textLen,
+            detectedLanguage: productLang,
             businessImpact: 'Generic descriptions do not explain why customers should buy from your store.',
             confidence: 'MEDIUM',
           },
@@ -462,6 +467,7 @@ export async function processAuditRun(jobData) {
             descriptionLength: textLen,
             wordCount,
             threshold: DESCRIPTION_MIN_CHARS,
+            detectedLanguage: productLang,
             businessImpact: 'Thin descriptions cannot convert paid or organic traffic.',
             confidence: 'HIGH',
           },

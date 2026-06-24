@@ -38,6 +38,7 @@ model Shop {
   overrides         MerchantOverride[]
   
   totalProductsCount Int      @default(0)
+  primaryLocale     String?   // Store primary locale from Shopify
   
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
@@ -162,6 +163,7 @@ model Product {
   imageCount        Int       @default(0)
   collectionIds     Json?
   published         Boolean   @default(true)
+  detectedLanguage  String?   // ISO 639-1 code: en, pt, es, fr, de, it
   
   variants          Variant[]
   performance       PerformanceMetric?
