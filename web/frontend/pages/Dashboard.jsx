@@ -815,6 +815,8 @@ export default function Dashboard() {
                   itemCount={filteredProducts.length}
                   headings={[
                     { title: "Product Title" },
+                    { title: "Desc Quality" },
+                    { title: "Completeness" },
                     { title: "Primary Issue" },
                     { title: "Recent Orders" },
                     { title: "Status / Severity" },
@@ -823,7 +825,7 @@ export default function Dashboard() {
                 >
                   {filteredProducts.length === 0 ? (
                     <IndexTable.Row>
-                      <IndexTable.Cell colSpan={3}>
+                      <IndexTable.Cell colSpan={6}>
                         <div style={{ padding: "60px", textAlign: "center" }}>
                           <div style={{ fontSize: "28px", marginBottom: "10px" }}>🔍</div>
                           <div style={{ fontSize: "15px", fontWeight: 600, color: colors.textPrimary, marginBottom: "4px" }}>No matching products</div>
@@ -832,7 +834,7 @@ export default function Dashboard() {
                       </IndexTable.Cell>
                     </IndexTable.Row>
                   ) : (
-                    filteredProducts.map(({ id, title, issueType, severity, performance }, index) => (
+                    filteredProducts.map(({ id, title, issueType, severity, performance, descriptionQualityScore, completenessScore }, index) => (
                       <IndexTable.Row id={id} key={id} position={index}>
                         <IndexTable.Cell>
                           <div 
@@ -841,7 +843,7 @@ export default function Dashboard() {
                               fontSize: "13px", 
                               fontWeight: 600, 
                               color: colors.textPrimary,
-                              maxWidth: "300px",
+                              maxWidth: "240px",
                               whiteSpace: "nowrap",
                               overflow: "hidden",
                               textOverflow: "ellipsis"
@@ -849,6 +851,24 @@ export default function Dashboard() {
                           >
                             {title}
                           </div>
+                        </IndexTable.Cell>
+                        <IndexTable.Cell>
+                          <span style={{ 
+                            fontSize: "13px", 
+                            fontWeight: 600, 
+                            color: descriptionQualityScore >= 80 ? colors.success : descriptionQualityScore >= 50 ? colors.warning : colors.critical 
+                          }}>
+                            {descriptionQualityScore ?? 0}%
+                          </span>
+                        </IndexTable.Cell>
+                        <IndexTable.Cell>
+                          <span style={{ 
+                            fontSize: "13px", 
+                            fontWeight: 600, 
+                            color: completenessScore >= 80 ? colors.success : completenessScore >= 50 ? colors.warning : colors.critical 
+                          }}>
+                            {completenessScore ?? 0}%
+                          </span>
                         </IndexTable.Cell>
                         <IndexTable.Cell>
                           <span style={{ fontSize: "13px", color: issueType === "Healthy" ? colors.success : colors.textSecondary }}>

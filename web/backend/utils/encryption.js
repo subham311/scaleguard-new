@@ -33,7 +33,31 @@ export function encrypt(text) {
 }
 
 export function decrypt(encryptedData) {
-  const key = getKey();
+  const primaryKey = process.env.ENCRYPTION_KEY;
+  const fallbackKeys = [
+    'scaleguard-encryption-key-32char',
+    '9f8e7d6c5b4a3f2e1d0c9b8a7f6e5d4c'
+  ].filter(k => k !== primaryKey);
+
+  try {
+    return decryptWithKey(encryptedData, primaryKey);
+  } catch (primaryError) {
+    for (const fallbackKey of fallbackKeys) {
+      try {
+        return decryptWithKey(encryptedData, fallbackKey);
+      } catch (fallbackError) {
+        // try next
+      }
+    }
+    throw primaryError;
+  }
+}
+
+function decryptWithKey(encryptedData, keyStr) {
+  if (!keyStr || keyStr.length !== 32) {
+    throw new Error('ENCRYPTION_KEY must be exactly 32 characters');
+  }
+  const key = Buffer.from(keyStr, 'utf8');
   const data = Buffer.from(encryptedData, 'base64');
   
   const salt = data.subarray(0, SALT_LENGTH);

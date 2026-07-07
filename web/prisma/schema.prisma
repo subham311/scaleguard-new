@@ -164,6 +164,12 @@ model Product {
   collectionIds     Json?
   published         Boolean   @default(true)
   detectedLanguage  String?   // ISO 639-1 code: en, pt, es, fr, de, it
+  descriptionQualityScore Int @default(0)
+  completenessScore       Int @default(0)
+  images                  Json?     // Array of image objects: [{ id, src, width, height, alt, position }]
+  productType             String?
+  tags                    String?
+  vendor                  String?
   
   variants          Variant[]
   performance       PerformanceMetric?

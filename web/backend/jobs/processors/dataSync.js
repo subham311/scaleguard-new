@@ -269,6 +269,15 @@ export async function processDataSync(jobData) {
         // Detect product language at ingestion time
         const { lang: detectedLang } = detectProductLanguage(product.title, product.body_html);
 
+        const productImages = Array.isArray(product.images) ? product.images.map(img => ({
+          id: String(img.id),
+          src: img.src,
+          width: img.width || 0,
+          height: img.height || 0,
+          alt: img.alt || '',
+          position: img.position
+        })) : [];
+
         // Upsert product — store full image count and storefront published status
         const savedProduct = await prisma.product.upsert({
           where: { shopifyId: String(product.id) },
@@ -280,8 +289,11 @@ export async function processDataSync(jobData) {
             imageCount: fullImageCount,
             published: product.published_at !== null && product.status === 'active',
             detectedLanguage: detectedLang,
-            // Store collection IDs if present (used for fragmentation analysis)
             collectionIds: (shopifyData.collectionMap && shopifyData.collectionMap.get(String(product.id))) || [],
+            images: productImages,
+            productType: product.product_type || "",
+            tags: product.tags || "",
+            vendor: product.vendor || "",
           },
           update: {
             title: product.title,
@@ -290,6 +302,10 @@ export async function processDataSync(jobData) {
             published: product.published_at !== null && product.status === 'active',
             detectedLanguage: detectedLang,
             collectionIds: (shopifyData.collectionMap && shopifyData.collectionMap.get(String(product.id))) || [],
+            images: productImages,
+            productType: product.product_type || "",
+            tags: product.tags || "",
+            vendor: product.vendor || "",
           },
         });
 

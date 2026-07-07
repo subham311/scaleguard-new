@@ -115,12 +115,12 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
       const pricingIssues = issues.filter(i => ['PRICING_ERROR', 'ABSOLUTE_PRICING_ANOMALY'].includes(i.type));
       const titleIssues = issues.filter(i => ['INVALID_PRODUCT_TITLE', 'WEAK_PRODUCT_TITLE', 'SERIAL_PRODUCT_TITLE', 'KEYWORD_STUFFED_TITLE'].includes(i.type));
       const descIssues = issues.filter(i =>
-        ['MISSING_DESCRIPTION', 'WEAK_DESCRIPTION', 'GENERIC_DESCRIPTION'].includes(i.type)
+        ['MISSING_DESCRIPTION', 'WEAK_DESCRIPTION', 'GENERIC_DESCRIPTION', 'SPEC_DUMP_DESCRIPTION', 'SUPPLIER_DESCRIPTION', 'MISSING_SIZE_GUIDE', 'MISSING_PRODUCT_SPECIFICATION'].includes(i.type)
       );
       const noImageIssues = issues.filter(i => i.type === 'NO_PRODUCT_IMAGES');
-      const imageIssues = issues.filter(i => ['NO_PRODUCT_IMAGES', 'LOW_IMAGE_COUNT', 'EXCESSIVE_IMAGE_COUNT'].includes(i.type));
+      const imageIssues = issues.filter(i => ['NO_PRODUCT_IMAGES', 'LOW_IMAGE_COUNT', 'EXCESSIVE_IMAGE_COUNT', 'DUPLICATE_IMAGES', 'LIMITED_IMAGE_DIVERSITY', 'LOW_QUALITY_IMAGE', 'INCONSISTENT_PRIMARY_IMAGE', 'INCONSISTENT_STORE_VISUALS'].includes(i.type));
       const consistencyIssues = issues.filter(i =>
-        ['CATALOG_INCONSISTENCY', 'HIGH_FRAGMENTATION', 'INCONSISTENT_PRICE_POSITIONING', 'VARIANT_PRICE_GAP', 'COLLECTION_PRICE_OUTLIER'].includes(i.type)
+        ['CATALOG_INCONSISTENCY', 'HIGH_FRAGMENTATION', 'INCONSISTENT_PRICE_POSITIONING', 'VARIANT_PRICE_GAP', 'COLLECTION_PRICE_OUTLIER', 'INCOMPLETE_ORGANIZATION', 'MISSING_RECOMMENDED_METAFIELDS'].includes(i.type)
       );
       const perfRiskIssues = issues.filter(i => i.type === 'HIGH_PERFORMANCE_LOW_QUALITY');
       const inventoryIssues = issues.filter(i =>
@@ -139,12 +139,21 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
         - (descIssues.filter(i => i.type === 'MISSING_DESCRIPTION').length * 10)
         - (descIssues.filter(i => i.type === 'WEAK_DESCRIPTION').length * 5)
         - (descIssues.filter(i => i.type === 'GENERIC_DESCRIPTION').length * 3)
+        - (descIssues.filter(i => i.type === 'SPEC_DUMP_DESCRIPTION').length * 15)
+        - (descIssues.filter(i => i.type === 'SUPPLIER_DESCRIPTION').length * 10)
+        - (descIssues.filter(i => i.type === 'MISSING_SIZE_GUIDE').length * 10)
+        - (descIssues.filter(i => i.type === 'MISSING_PRODUCT_SPECIFICATION').length * 5)
       );
       scores.visualTrust = Math.max(0,
         100
         - (noImageIssues.length * 30)
         - (imageIssues.filter(i => i.type === 'LOW_IMAGE_COUNT').length * 15)
         - (imageIssues.filter(i => i.type === 'EXCESSIVE_IMAGE_COUNT').length * 5)
+        - (imageIssues.filter(i => i.type === 'DUPLICATE_IMAGES').length * 10)
+        - (imageIssues.filter(i => i.type === 'LIMITED_IMAGE_DIVERSITY').length * 5)
+        - (imageIssues.filter(i => i.type === 'LOW_QUALITY_IMAGE').length * 15)
+        - (imageIssues.filter(i => i.type === 'INCONSISTENT_PRIMARY_IMAGE').length * 20)
+        - (imageIssues.filter(i => i.type === 'INCONSISTENT_STORE_VISUALS').length * 5)
       );
       scores.catalogConsistency = Math.max(0, 100 
         - (consistencyIssues.length * 20)
@@ -168,18 +177,29 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
         descIssues.filter(i => i.type === 'MISSING_DESCRIPTION').length > 0 && `${descIssues.filter(i => i.type === 'MISSING_DESCRIPTION').length} product(s) are missing descriptions`,
         descIssues.filter(i => i.type === 'WEAK_DESCRIPTION').length > 0 && `${descIssues.filter(i => i.type === 'WEAK_DESCRIPTION').length} product(s) have thin descriptions`,
         descIssues.filter(i => i.type === 'GENERIC_DESCRIPTION').length > 0 && `${descIssues.filter(i => i.type === 'GENERIC_DESCRIPTION').length} product(s) have generic descriptions`,
+        descIssues.filter(i => i.type === 'SPEC_DUMP_DESCRIPTION').length > 0 && `${descIssues.filter(i => i.type === 'SPEC_DUMP_DESCRIPTION').length} product(s) have spec-dump descriptions`,
+        descIssues.filter(i => i.type === 'SUPPLIER_DESCRIPTION').length > 0 && `${descIssues.filter(i => i.type === 'SUPPLIER_DESCRIPTION').length} product(s) have supplier-style descriptions`,
+        descIssues.filter(i => i.type === 'MISSING_SIZE_GUIDE').length > 0 && `${descIssues.filter(i => i.type === 'MISSING_SIZE_GUIDE').length} fashion product(s) are missing size guides`,
+        descIssues.filter(i => i.type === 'MISSING_PRODUCT_SPECIFICATION').length > 0 && `${descIssues.filter(i => i.type === 'MISSING_PRODUCT_SPECIFICATION').length} product(s) are missing specifications`,
       ].filter(Boolean);
 
       const vtParts = [
         noImageIssues.length > 0 && `${noImageIssues.length} product(s) have no images at all`,
         imageIssues.filter(i => i.type === 'LOW_IMAGE_COUNT').length > 0 && `${imageIssues.filter(i => i.type === 'LOW_IMAGE_COUNT').length} product(s) have too few images`,
         imageIssues.filter(i => i.type === 'EXCESSIVE_IMAGE_COUNT').length > 0 && `${imageIssues.filter(i => i.type === 'EXCESSIVE_IMAGE_COUNT').length} product(s) have excessive image counts`,
+        imageIssues.filter(i => i.type === 'DUPLICATE_IMAGES').length > 0 && `${imageIssues.filter(i => i.type === 'DUPLICATE_IMAGES').length} product(s) contain duplicate images`,
+        imageIssues.filter(i => i.type === 'LIMITED_IMAGE_DIVERSITY').length > 0 && `${imageIssues.filter(i => i.type === 'LIMITED_IMAGE_DIVERSITY').length} product(s) show limited image diversity`,
+        imageIssues.filter(i => i.type === 'LOW_QUALITY_IMAGE').length > 0 && `${imageIssues.filter(i => i.type === 'LOW_QUALITY_IMAGE').length} product(s) contain low-quality images`,
+        imageIssues.filter(i => i.type === 'INCONSISTENT_PRIMARY_IMAGE').length > 0 && `${imageIssues.filter(i => i.type === 'INCONSISTENT_PRIMARY_IMAGE').length} product(s) have non-product primary images`,
+        imageIssues.filter(i => i.type === 'INCONSISTENT_STORE_VISUALS').length > 0 && `${imageIssues.filter(i => i.type === 'INCONSISTENT_STORE_VISUALS').length} product(s) have visually inconsistent primary images`,
       ].filter(Boolean);
 
       const cParts = [
         consistencyIssues.find(i => i.type === 'HIGH_FRAGMENTATION') && 'catalog spans too many product types (Flea Market Risk)',
         consistencyIssues.find(i => ['COLLECTION_PRICE_OUTLIER', 'INCONSISTENT_PRICE_POSITIONING'].includes(i.type)) && 'extreme catalog price variance signals inconsistent positioning',
         consistencyIssues.find(i => ['VARIANT_PRICE_GAP', 'CATALOG_INCONSISTENCY'].includes(i.type)) && 'some products have significant variant pricing gaps',
+        consistencyIssues.filter(i => i.type === 'INCOMPLETE_ORGANIZATION').length > 0 && `${consistencyIssues.filter(i => i.type === 'INCOMPLETE_ORGANIZATION').length} product(s) have incomplete vendor, tag, or type organization`,
+        consistencyIssues.filter(i => i.type === 'MISSING_RECOMMENDED_METAFIELDS').length > 0 && `${consistencyIssues.filter(i => i.type === 'MISSING_RECOMMENDED_METAFIELDS').length} product(s) are missing recommended metafields`,
       ].filter(Boolean);
 
       const rParts = [
@@ -281,6 +301,12 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
         } else if (issueGroup.type === 'GENERIC_DESCRIPTION') {
           recommendation = 'This description appears generic and does not explain why the customer should buy this product from your store. Rewrite with specific product benefits and differentiators.';
           evidence = `${affectedEntitiesArray.length} product(s) have boilerplate or placeholder descriptions.`;
+        } else if (issueGroup.type === 'SPEC_DUMP_DESCRIPTION') {
+          recommendation = 'Why this was flagged: The description is primarily a list of specifications (materials, dimensions, etc.) without copywriting. Why it matters: Customers trust benefits and copy over raw data sheets. Impact: Weakens purchase confidence, drops conversion rate, and wastes ad spend. Recommended action: Rewrite to lead with product benefits and store differentiation, putting technical specifications at the bottom.';
+          evidence = `${affectedEntitiesArray.length} product(s) have specification-only descriptions.`;
+        } else if (issueGroup.type === 'SUPPLIER_DESCRIPTION') {
+          recommendation = 'Why this was flagged: Contains AliExpress, Temu, or bulk-import template phrases. Why it matters: Boilerplate warnings or dropship shipping notices destroy brand authenticity. Impact: Lowers buyer trust, triggers price-shopping behavior, and lowers ROI on paid traffic. Recommended action: Strip out all template, translation, or delivery errors, and write custom branded copy.';
+          evidence = `${affectedEntitiesArray.length} product(s) contain supplier boilerplate content.`;
         } else if (issueGroup.type === 'VARIANT_PRICE_GAP') {
           recommendation = 'This product has large pricing gaps between variants. This may confuse buyers or indicate a pricing setup error. Review variant pricing before running traffic.';
           evidence = `${affectedEntitiesArray.length} product(s) have variants with 3× or greater price gaps.`;
@@ -320,6 +346,33 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
         } else if (issueGroup.type === 'KEYWORD_STUFFED_TITLE') {
           recommendation = 'This product title appears keyword-stuffed or overloaded with repetitive wording or dividers. While title length itself is fine, overloaded structures look unprofessional and reduce buyer trust. Curate for readability.';
           evidence = 'Title has repetitive words or excessive separation characters.';
+        } else if (issueGroup.type === 'DUPLICATE_IMAGES') {
+          recommendation = 'Why this was flagged: Identical or near-identical images exist in this product\'s gallery. Why it matters: Duplicate imagery looks cluttered and unprofessional, suggesting a lack of manual curation. Impact: Lowers buyer trust and conversion rates. Recommended action: Remove duplicate images in Shopify Admin, keeping only unique angles/perspectives.';
+          evidence = `${affectedEntitiesArray.length} product(s) have duplicate images.`;
+        } else if (issueGroup.type === 'LIMITED_IMAGE_DIVERSITY') {
+          recommendation = 'Why this was flagged: Multiple images provide little visual variation. Why it matters: Buyers expect to see alternative angles, detail close-ups, or lifestyle contexts. Impact: Limited diversity creates purchasing hesitation. Recommended action: Add diverse product shots (lifestyle, zoom, packaging, sizing context) to build visual trust.';
+          evidence = `${affectedEntitiesArray.length} product(s) show limited image diversity.`;
+        } else if (issueGroup.type === 'LOW_QUALITY_IMAGE') {
+          recommendation = 'Why this was flagged: Pixelated, blurry, or low-resolution images detected. Why it matters: High-resolution imagery is the single most critical factor for online purchase decisions. Impact: Lowers conversion rates, increases returns risk, and ruins advertising efficiency. Recommended action: Replace with high-quality images (at least 800x800 px) in Shopify Admin.';
+          evidence = `${affectedEntitiesArray.length} product(s) contain blurry or low-resolution images.`;
+        } else if (issueGroup.type === 'INCONSISTENT_PRIMARY_IMAGE') {
+          recommendation = 'Why this was flagged: Primary image represents a size chart, packaging, or placeholder instead of the product. Why it matters: The primary image is the first visual buyers see in collection lists and advertisements. Impact: Drives immediate bounce rates and drops click-through rates. Recommended action: Re-order product images so the actual product photo is at position 1.';
+          evidence = `${affectedEntitiesArray.length} product(s) have non-product primary images.`;
+        } else if (issueGroup.type === 'INCONSISTENT_STORE_VISUALS') {
+          recommendation = 'Why this was flagged: Product\'s primary image aspect ratio is visually inconsistent with the store catalog standard. Why it matters: Visual uniformity across collection grids provides a premium, curated feel. Impact: Aspect ratio mismatch makes the store look cluttered and untrustworthy. Recommended action: Crop or edit product primary images to match the store\'s dominant aspect ratio.';
+          evidence = `${affectedEntitiesArray.length} product(s) have visually inconsistent primary images.`;
+        } else if (issueGroup.type === 'MISSING_SIZE_GUIDE') {
+          recommendation = 'Why this was flagged: Sizing chart, measurements, or sizing guidance could not be found for this fashion or apparel product. Why it matters: Sizing uncertainty is the #1 reason for clothing returns and abandoned checkouts. Impact: Increases sizing support inquiries, reduces conversion rate, and raises merchant refund rates. Recommended action: Add a sizing chart image or text measurements table to the product description in Shopify Admin.';
+          evidence = `${affectedEntitiesArray.length} apparel/footwear product(s) are missing size guides.`;
+        } else if (issueGroup.type === 'MISSING_PRODUCT_SPECIFICATION') {
+          recommendation = 'Why this was flagged: Material details, item dimensions, or technical specifications are missing from the product details. Why it matters: Buyers require raw specifications (materials, size measurements, package inclusions) to verify fit and quality. Impact: Lowers conversion rates due to unanswered buyer questions. Recommended action: Add clear specifications (e.g. \'Material: 100% Cotton\') to the product description.';
+          evidence = `${affectedEntitiesArray.length} product(s) have no dimensions, materials, or specifications.`;
+        } else if (issueGroup.type === 'INCOMPLETE_ORGANIZATION') {
+          recommendation = 'Why this was flagged: This product is missing basic catalog categorization data (vendor, tags, type, or collection assignment). Why it matters: Buyers use filters, search queries, and collection pages to browse catalogs. Impact: Weak organization results in poor search findability and broken navigation menus. Recommended action: In Shopify Admin, assign a product type, vendor, and tags, and add it to at least one collection.';
+          evidence = `${affectedEntitiesArray.length} product(s) have incomplete vendor, type, tag, or collection metadata.`;
+        } else if (issueGroup.type === 'MISSING_RECOMMENDED_METAFIELDS') {
+          recommendation = 'Why this was flagged: Multiple standard merchandising metafields (color, material, fabric, age group, or product features) are not defined. Why it matters: Detailed attributes power shopping comparison features and search index indexing. Impact: Reduces faceted search visibility and drops customer click-through. Recommended action: Add detailed color, material, age group/gender, and feature specifications to the product information.';
+          evidence = `${affectedEntitiesArray.length} product(s) are missing recommended metafield attributes (fabric, color, age group, features).`;
         }
 
         // Get affected products with id, shopifyId, and title for deep-linking
@@ -366,6 +419,8 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
           title: p.title,
           issueType: productIssues.length > 0 ? productIssues[0].type.replace(/_/g, ' ') : 'Healthy',
           severity: productIssues.length > 0 ? productIssues[0].severity : 'NONE',
+          descriptionQualityScore: p.descriptionQualityScore || 0,
+          completenessScore: p.completenessScore || 0,
           performance: p.performance ? {
             orders: p.performance.orderCount,
             sales: p.performance.totalSales
