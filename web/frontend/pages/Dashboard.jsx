@@ -246,7 +246,17 @@ export default function Dashboard() {
 
   const status = data?.subscription?.status;
   const verdict = data?.verdict || "Waiting for Sync";
-  const scores = data?.scores || { productDataQuality: 0, visualTrust: 0, catalogConsistency: 0, conversionReadiness: 0 };
+  const scores = data?.scores || {
+    productDataQuality: 0,
+    visualTrust: 0,
+    catalogConsistency: 0,
+    conversionReadiness: 0,
+    fulfillmentTrust: 0,
+    dropshippingPerception: 0,
+    catalogMaintenance: 0,
+    trustScore: 0,
+    trustClassification: 'Waiting for Sync'
+  };
   const scoreExplanations = data?.scoreExplanations || {};
   const issues = data?.issues || [];
   const products = data?.products || [];
@@ -565,6 +575,132 @@ export default function Dashboard() {
             </div>
           </Layout.Section>
 
+          {/* ── 2.5. Store Trust Intelligence ── */}
+          <Layout.Section>
+            <SectionLabel>Store Trust Intelligence</SectionLabel>
+            <Card style={{ padding: "20px 24px", background: colors.surface }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "16px", marginBottom: "20px", borderBottom: `1px solid ${colors.border}`, paddingBottom: "16px" }}>
+                <div>
+                  <div style={{ fontSize: "16px", fontWeight: 700, color: colors.textPrimary }}>Store Trust Summary</div>
+                  <div style={{ fontSize: "13px", color: colors.textSecondary, marginTop: "2px" }}>
+                    Overall customer trust assessment and brand credibility signals.
+                  </div>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                  <span style={{ fontSize: "14px", fontWeight: 600, color: colors.textSecondary }}>Trust Status:</span>
+                  <span style={{
+                    padding: "6px 16px",
+                    borderRadius: radius.md,
+                    background: scores.trustClassification === 'Excellent' || scores.trustClassification === 'Good' ? colors.successBg : scores.trustClassification === 'Fair' ? colors.infoBg : colors.warningBg,
+                    color: scores.trustClassification === 'Excellent' || scores.trustClassification === 'Good' ? colors.success : scores.trustClassification === 'Fair' ? colors.info : colors.warning,
+                    fontSize: "14px",
+                    fontWeight: 700,
+                    textTransform: "uppercase"
+                  }}>
+                    {scores.trustClassification || 'Fair'}
+                  </span>
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "16px" }}>
+                <div style={{ padding: "16px", background: colors.surfaceAlt, borderRadius: radius.md, border: `1px solid ${colors.border}`, display: "flex", alignItems: "center", gap: "14px" }}>
+                  <ScoreRing score={scores.trustScore} color={colors.accent} />
+                  <div>
+                    <div style={{ fontSize: "14px", fontWeight: 700, color: colors.textPrimary }}>Trust Score</div>
+                    <div style={{ fontSize: "11px", color: colors.textSecondary, marginTop: "2px" }}>Weighted trust index</div>
+                  </div>
+                </div>
+                <div style={{ padding: "16px", background: colors.surfaceAlt, borderRadius: radius.md, border: `1px solid ${colors.border}`, display: "flex", alignItems: "center", gap: "14px" }}>
+                  <ScoreRing score={scores.fulfillmentTrust} color="#00A3BF" />
+                  <div>
+                    <div style={{ fontSize: "14px", fontWeight: 700, color: colors.textPrimary }}>Fulfillment Trust</div>
+                    <div style={{ fontSize: "11px", color: colors.textSecondary, marginTop: "2px" }}>Delivery timeline & risk</div>
+                  </div>
+                </div>
+                <div style={{ padding: "16px", background: colors.surfaceAlt, borderRadius: radius.md, border: `1px solid ${colors.border}`, display: "flex", alignItems: "center", gap: "14px" }}>
+                  <ScoreRing score={scores.dropshippingPerception} color="#FF9900" />
+                  <div>
+                    <div style={{ fontSize: "14px", fontWeight: 700, color: colors.textPrimary }}>Dropship Perception</div>
+                    <div style={{ fontSize: "11px", color: colors.textSecondary, marginTop: "2px" }}>Import/supplier cues</div>
+                  </div>
+                </div>
+                <div style={{ padding: "16px", background: colors.surfaceAlt, borderRadius: radius.md, border: `1px solid ${colors.border}`, display: "flex", alignItems: "center", gap: "14px" }}>
+                  <ScoreRing score={scores.catalogMaintenance} color="#00B779" />
+                  <div>
+                    <div style={{ fontSize: "14px", fontWeight: 700, color: colors.textPrimary }}>Catalog Maintenance</div>
+                    <div style={{ fontSize: "11px", color: colors.textSecondary, marginTop: "2px" }}>Polish & metadata coverage</div>
+                  </div>
+                </div>
+              </div>
+            </Card>
+          </Layout.Section>
+
+          {/* ── 2.7. ScaleGuard Advisor Insights (Quick Wins & Commercial Recommendations) ── */}
+          <Layout.Section>
+            <SectionLabel>ScaleGuard Advisor Insights</SectionLabel>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "16px" }}>
+              {/* Quick Wins */}
+              <Card style={{ padding: "20px 24px", display: "flex", flexDirection: "column", height: "100%" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
+                  <span style={{ fontSize: "18px" }}>⚡</span>
+                  <span style={{ fontSize: "15px", fontWeight: 700, color: colors.textPrimary }}>Top Quick Wins</span>
+                </div>
+                <p style={{ fontSize: "13px", color: colors.textSecondary, marginBottom: "16px" }}>
+                  High-impact, low-effort adjustments you can make right away to improve buyer confidence.
+                </p>
+                {(!data?.quickWins || data.quickWins.length === 0) ? (
+                  <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", minHeight: "150px", border: `1px dashed ${colors.border}`, borderRadius: radius.md, color: colors.textMuted, fontSize: "13px" }}>
+                    No pending quick wins! Store looks pristine.
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "12px", flex: 1 }}>
+                    {data.quickWins.map((win, idx) => (
+                      <div key={idx} style={{ padding: "12px", background: colors.surfaceAlt, borderRadius: radius.md, border: `1px solid ${colors.border}` }}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", marginBottom: "6px" }}>
+                          <span style={{ fontSize: "13px", fontWeight: 700, color: colors.textPrimary }}>{win.title}</span>
+                          <div style={{ display: "flex", gap: "4px" }}>
+                            <span style={{ padding: "2px 6px", borderRadius: "4px", background: win.effort === 'Low' ? colors.successBg : colors.infoBg, color: win.effort === 'Low' ? colors.success : colors.info, fontSize: "10px", fontWeight: 700 }}>
+                              {win.effort} Effort
+                            </span>
+                            <span style={{ padding: "2px 6px", borderRadius: "4px", background: colors.accentLight, color: colors.accent, fontSize: "10px", fontWeight: 700 }}>
+                              {win.impact} Impact
+                            </span>
+                          </div>
+                        </div>
+                        <div style={{ fontSize: "12px", color: colors.textSecondary, lineHeight: "1.4" }}>{win.action}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Card>
+
+              {/* Commercial Recommendations */}
+              <Card style={{ padding: "20px 24px", display: "flex", flexDirection: "column", height: "100%" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
+                  <span style={{ fontSize: "18px" }}>📈</span>
+                  <span style={{ fontSize: "15px", fontWeight: 700, color: colors.textPrimary }}>Commercial Advisor Insights</span>
+                </div>
+                <p style={{ fontSize: "13px", color: colors.textSecondary, marginBottom: "16px" }}>
+                  Strategic recommendations for store scaling, conversion optimization, and paid ad readiness.
+                </p>
+                {(!data?.commercialRecommendations || data.commercialRecommendations.length === 0) ? (
+                  <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", minHeight: "150px", border: `1px dashed ${colors.border}`, borderRadius: radius.md, color: colors.textMuted, fontSize: "13px" }}>
+                    All commercial readiness standards met. Ready for paid traffic!
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "10px", flex: 1 }}>
+                    {data.commercialRecommendations.map((rec, idx) => (
+                      <div key={idx} style={{ display: "flex", alignItems: "flex-start", gap: "10px", padding: "10px 12px", background: colors.surfaceAlt, borderRadius: radius.md, borderLeft: `3px solid ${colors.accent}` }}>
+                        <span style={{ fontSize: "14px", marginTop: "2px" }}>💡</span>
+                        <div style={{ fontSize: "13px", color: colors.textPrimary, fontWeight: 500, lineHeight: "1.4" }}>{rec}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Card>
+            </div>
+          </Layout.Section>
+
           {/* ── 3. Priority Fixes ── */}
           <Layout.Section>
             <SectionLabel>Priority Risks Before Scaling</SectionLabel>
@@ -607,7 +743,7 @@ export default function Dashboard() {
                             }} />
                             <div style={{ minWidth: 0 }}>
                               <div style={{ fontSize: "14px", fontWeight: 600, color: colors.textPrimary, marginBottom: "2px" }}>{type}</div>
-                              <div style={{ fontSize: "12px", color: colors.textSecondary, lineHeight: "1.4", marginTop: "4px" }}>
+                              <div style={{ fontSize: "12px", color: colors.textSecondary, lineHeight: "1.4", marginTop: "4px", whiteSpace: "pre-line" }}>
                                 {recommendation}
                               </div>
                             </div>
@@ -904,6 +1040,21 @@ export default function Dashboard() {
                     <div style={{ fontSize: "13px", color: colors.textSecondary, marginTop: "4px" }}>
                       These active audits have been manually bypassed for your storefront. They will not impact your Scale Readiness Score or display active findings.
                     </div>
+                    {overrides.length >= 3 && (
+                      <div style={{
+                        padding: "10px 14px",
+                        borderRadius: radius.md,
+                        background: colors.warningBg,
+                        border: `1px solid ${colors.warning}30`,
+                        display: "flex", alignItems: "center", gap: "8px",
+                        marginTop: "12px"
+                      }}>
+                        <span style={{ fontSize: "16px" }}>⚠️</span>
+                        <div style={{ fontSize: "13px", color: colors.warning, fontWeight: 600 }}>
+                          Several trust-related warnings are currently ignored.
+                        </div>
+                      </div>
+                    )}
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
                     {overrides.map((override) => (

@@ -493,22 +493,18 @@ async function handleCreateSubscription(req, res) {
       }
     `;
 
-    // Determine promotion setup
+    // Check if the store has already used a free trial
+    const existingSub = await prisma.subscription.findUnique({
+      where: { shopId: req.shop.id }
+    });
+
+    const hasUsedTrial = existingSub && existingSub.trialEndsAt !== null;
+
     let trialDays = null;
     let discount = null;
 
-    if (planUpper === 'LIGHT') {
-      trialDays = 30; // 30 days free trial
-    } else if (planUpper === 'GROWTH') {
-      discount = {
-        durationMonths: 1,
-        value: { amount: 48.99 } // $49.99 - $48.99 = $1.00 for the first month
-      };
-    } else if (planUpper === 'PRO') {
-      discount = {
-        durationMonths: 1,
-        value: { amount: 98.99 } // $99.99 - $98.99 = $1.00 for the first month
-      };
+    if (!hasUsedTrial) {
+      trialDays = 30; // 30-day free trial for all plans
     }
 
     const variables = {

@@ -4,6 +4,8 @@ import {
   isGenericDescriptionForLang,
   getStopWords
 } from '../../utils/languageDetector.js';
+import { evaluateDescriptionQualityWithAI } from '../../services/openaiService.js';
+
 
 const LAZY_INVENTORY_VALUES = new Set([999, 9999, 10000]);
 const DESCRIPTION_MIN_CHARS = 350; // ~70 words
@@ -463,6 +465,239 @@ export function auditProductMetafields(product, auditRunId) {
   return issues;
 }
 
+export function extractDeliveryDuration(product) {
+  const desc = (product.description || '')
+    .replace(/<[^>]*>?/gm, ' ')
+    .replace(/[^a-zA-Z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
+  const tags = (product.tags || '').toLowerCase();
+
+  // Check tags first as they are explicit overrides
+  const rangeTag = tags.match(/(?:delivery|shipping)_(\d+)_(\d+)_days/);
+  if (rangeTag) return parseInt(rangeTag[2], 10);
+  const singleTag = tags.match(/(?:delivery|shipping)_(\d+)_days/);
+  if (singleTag) return parseInt(singleTag[1], 10);
+
+  let maxDays = null;
+
+  // Keywords before the duration
+  const regexBefore = /(?:delivery|shipping|ships|ship|transit|arrive|arrives|takes|estimated|allow)\s+(?:\w+\s+){0,3}?(\d+)(?:\s+(?:-|to)\s*(\d+))?\s*(day|week|month|business\s+day)s?/g;
+  
+  // Keywords after the duration
+  const regexAfter = /(\d+)(?:\s+(?:-|to)\s*(\d+))?\s*(day|week|month|business\s+day)s?\s+(?:\w+\s+){0,3}?(?:delivery|shipping|ships|ship|transit|arrival|allow)/g;
+
+  const processMatch = (match) => {
+    const val1 = parseInt(match[1], 10);
+    const val2 = match[2] ? parseInt(match[2], 10) : null;
+    const unit = match[3];
+
+    let duration = val2 !== null ? val2 : val1;
+    if (unit.startsWith('week')) {
+      duration *= 7;
+    } else if (unit.startsWith('month')) {
+      duration *= 30;
+    }
+    
+    if (maxDays === null || duration > maxDays) {
+      maxDays = duration;
+    }
+  };
+
+  let match;
+  regexBefore.lastIndex = 0;
+  while ((match = regexBefore.exec(desc)) !== null) {
+    processMatch(match);
+  }
+
+  regexAfter.lastIndex = 0;
+  while ((match = regexAfter.exec(desc)) !== null) {
+    processMatch(match);
+  }
+
+  return maxDays;
+}
+
+export function classifyFulfillmentModel(product, imageIntelIssues = [], hasUnrealisticInv = false, hasUniformInv = false) {
+  const title = (product.title || '').toLowerCase();
+  const desc = (product.description || '').toLowerCase();
+  const tags = (product.tags || '').toLowerCase();
+
+  // 1. Custom-Made
+  const customKeywords = [
+    'custom-made', 'made to order', 'made-to-order', 'customized', 'personalized',
+    'custom size', 'bespoke', 'tailor-made', 'handmade', 'personalizado', 'hecho a mano'
+  ];
+  if (
+    customKeywords.some(kw => title.includes(kw) || desc.includes(kw)) ||
+    tags.split(/[\s,]+/).some(t => customKeywords.includes(t))
+  ) {
+    return 'CUSTOM_MADE';
+  }
+
+  // 2. Overseas Dropship
+  const overseasTags = ['ships_from_china', 'china', 'overseas', 'dropship', 'supplier', 'epacket'];
+  const hasOverseasTag = tags.split(/[\s,]+/).some(t => overseasTags.includes(t));
+  
+  const supplierPhrases = [
+    'due to manual measurement', 'allow slight difference', 'color deviation',
+    'actual color may be slightly', 'brand new and high quality', '100% brand new',
+    'please allow', 'item color displayed in photos', 'due to the light and screen difference',
+    'wholesale and drop shipping', 'drop shipping', 'dropshipping', 'aliexpress', 'temu',
+    'china post', 'estimated delivery time', 'import duties', 'tax not included',
+    'factory direct', 'no package box', 'opp bag package', 'satisfaction guarantee contact us'
+  ];
+  const hasSupplierPhrase = supplierPhrases.some(phrase => desc.includes(phrase));
+
+  if (hasOverseasTag || hasSupplierPhrase || hasUnrealisticInv || hasUniformInv) {
+    return 'OVERSEAS_DROPSHIP';
+  }
+
+  // 3. Local Fulfillment
+  const localTags = ['ships_from_us', 'ships_from_uk', 'local_shipping', 'domestic', 'local_fulfillment'];
+  const hasLocalTag = tags.split(/[\s,]+/).some(t => localTags.includes(t));
+  
+  const localPhrases = [
+    'ships from us', 'ships from uk', 'us warehouse', 'uk warehouse',
+    'local warehouse', 'domestic shipping', 'local delivery', 'ships locally'
+  ];
+  const hasLocalPhrase = localPhrases.some(phrase => desc.includes(phrase));
+
+  if (hasLocalTag || hasLocalPhrase) {
+    return 'LOCAL_FULFILLMENT';
+  }
+
+  // 4. Default: Own Inventory
+  return 'OWN_INVENTORY';
+}
+
+export function checkShippingCommunication(product) {
+  const desc = (product.description || '').toLowerCase();
+  const tags = (product.tags || '').toLowerCase();
+
+  const commKeywords = [
+    'shipping policy', 'tracking number', 'delivery options', 'shipped via',
+    'shipping method', 'track package', 'sent with', 'tracking link',
+    'entrega', 'envío', 'seguimiento', 'tracking info', 'shipping timelines',
+    'tracking code', 'ships with tracking', 'estimated shipping'
+  ];
+
+  if (commKeywords.some(kw => desc.includes(kw)) || tags.includes('shipping_info')) {
+    return 'GOOD';
+  }
+
+  return 'POOR';
+}
+
+export function auditProductFulfillment(product, auditRunId, imageIntelIssues = [], hasUnrealisticInv = false, hasUniformInv = false) {
+  const issues = [];
+  const shopifyId = product.shopifyId;
+  const title = product.title;
+
+  const model = classifyFulfillmentModel(product, imageIntelIssues, hasUnrealisticInv, hasUniformInv);
+  const comm = checkShippingCommunication(product);
+  
+  let estimate = extractDeliveryDuration(product);
+  const hasExplicitEstimate = estimate !== null;
+
+  if (estimate === null) {
+    if (model === 'OVERSEAS_DROPSHIP') {
+      estimate = 15;
+    } else if (model === 'LOCAL_FULFILLMENT') {
+      estimate = 3;
+    } else {
+      estimate = 5;
+    }
+  }
+
+  // 1. Delivery Risk Classification (Section 5.1 & 5.4)
+  let riskType = 'DELIVERY_RISK_LOW';
+  let riskSeverity = 'LOW';
+  let riskReason = '';
+  let riskImpact = '';
+
+  if (model === 'CUSTOM_MADE') {
+    if (comm === 'POOR') {
+      riskType = 'DELIVERY_RISK_MEDIUM';
+      riskSeverity = 'MEDIUM';
+      riskReason = 'Custom-made product lacks clear shipping expectations in description.';
+      riskImpact = 'Buyers are willing to wait for custom items, but missing communication increases order cancellations.';
+    } else {
+      riskType = 'DELIVERY_RISK_LOW';
+      riskSeverity = 'LOW';
+      riskReason = 'Custom-made product with appropriate shipping communication.';
+      riskImpact = 'Strong communication secures customer trust for custom items.';
+    }
+  } else {
+    if (estimate > 21 || (model === 'OVERSEAS_DROPSHIP' && comm === 'POOR')) {
+      riskType = 'DELIVERY_RISK_CRITICAL';
+      riskSeverity = 'CRITICAL';
+      riskReason = `Delivery time estimate is extremely long (${estimate} days) or overseas dropshipping is combined with poor communication.`;
+      riskImpact = 'Extremely slow shipping causes checkout abandonment and refund rates spike.';
+    } else if ((estimate >= 15 && estimate <= 21 && comm === 'POOR') || (model === 'OVERSEAS_DROPSHIP' && comm === 'GOOD')) {
+      riskType = 'DELIVERY_RISK_HIGH';
+      riskSeverity = 'HIGH';
+      riskReason = `Delivery estimate is long (${estimate} days) and lacks clear tracking instructions, or is standard dropshipping fulfillment.`;
+      riskImpact = 'High delivery timeline reduces buyer trust and conversion rates.';
+    } else if ((estimate >= 10 && estimate <= 14) || (model === 'LOCAL_FULFILLMENT' && comm === 'POOR')) {
+      riskType = 'DELIVERY_RISK_MEDIUM';
+      riskSeverity = 'MEDIUM';
+      riskReason = `Delivery estimate is moderate (${estimate} days) or locally shipped but missing detailed delivery policy copy.`;
+      riskImpact = 'Moderate shipping times require reassurance to convert skeptical buyers.';
+    } else {
+      riskType = 'DELIVERY_RISK_LOW';
+      riskSeverity = 'LOW';
+      riskReason = `Fast delivery estimate (${estimate} days) with clear shipping expectations.`;
+      riskImpact = 'Fast delivery is a positive trust signal that boosts conversion rates.';
+    }
+  }
+
+  // Only emit an issue if the risk level is actionable (MEDIUM, HIGH, CRITICAL).
+  // DELIVERY_RISK_LOW means the product is healthy — no warning needed. It still
+  // contributes zero deductions to the Fulfillment Trust Score, so the score
+  // correctly reflects the store's delivery health without noisy LOW entries.
+  if (riskType !== 'DELIVERY_RISK_LOW') {
+    issues.push({
+      auditRunId,
+      type: riskType,
+      severity: riskSeverity,
+      category: 'INVENTORY',
+      affectedEntities: [shopifyId],
+      evidence: {
+        title,
+        fulfillmentModel: model,
+        shippingCommunication: comm,
+        deliveryEstimateDays: estimate,
+        hasExplicitEstimate,
+        reason: riskReason,
+        businessImpact: riskImpact,
+        confidence: 'HIGH'
+      }
+    });
+  }
+
+  // 2. Long Delivery Without Communication (Section 5.2)
+  if (estimate > 10 && comm === 'POOR' && model !== 'CUSTOM_MADE') {
+    issues.push({
+      auditRunId,
+      type: 'LONG_DELIVERY_NO_COMM',
+      severity: 'HIGH',
+      category: 'INVENTORY',
+      affectedEntities: [shopifyId],
+      evidence: {
+        title,
+        deliveryEstimateDays: estimate,
+        fulfillmentModel: model,
+        reason: `Long shipping estimate of ${estimate} days is published without clear tracking or shipping updates.`,
+        businessImpact: 'Failing to communicate long shipping times creates severe customer friction and chargeback risks.',
+        confidence: 'HIGH'
+      }
+    });
+  }
+
+  return { issues, model, comm, estimate };
+}
+
 function rawTextLength(html) {
   if (!html) return 0;
   return html.replace(/<[^>]*>?/gm, '').trim().length;
@@ -673,8 +908,6 @@ function isDimensionalOrQuantityProduct(variants) {
     if (!variant.title) continue;
     const title = variant.title.toLowerCase();
     
-    if (dimRegex.test(title)) return true;
-    if (unitRegex.test(title)) return true;
     if (wordIndicators.some(indicator => title.includes(indicator))) return true;
   }
   
@@ -746,12 +979,72 @@ function isSpecDumpDescription(html, lang = 'en') {
   const specWordRatio = totalWords > 0 ? specWordCount / totalWords : 0;
   const copyRatio = totalWords > 0 ? copyWordCount / totalWords : 0;
   
+  // Calibrate: If copywriting is present, it's not a pure spec dump (weak or generic instead)
+  if (copyWordCount >= 5) {
+    return false;
+  }
+  
   if (totalWords > 120 && copyWordCount >= 2) {
     return false;
   }
   
   if ((colonRatio > 0.4 || specLineRatio > 0.4 || specWordRatio > 0.3) && copyRatio < 0.05) {
     return true;
+  }
+  
+  return false;
+}
+
+export function checkIfSpecsAreAtBottom(html) {
+  if (!html) return false;
+  const text = html.replace(/<[^>]*>?/gm, '').trim();
+  const lowerText = text.toLowerCase();
+  
+  const specKeywords = ['specifications', 'specification', 'material:', 'size:', 'choice:', 'for:', 'season:', 'style:'];
+  let firstSpecIndex = -1;
+  for (const kw of specKeywords) {
+    const idx = lowerText.indexOf(kw);
+    if (idx !== -1 && (firstSpecIndex === -1 || idx < firstSpecIndex)) {
+      firstSpecIndex = idx;
+    }
+  }
+  
+  if (firstSpecIndex === -1) return false;
+  return firstSpecIndex >= text.length * 0.4;
+}
+
+export function isRepetitiveGenericDescription(html, title, lang = 'en') {
+  if (!html) return false;
+  const text = html.replace(/<[^>]*>?/gm, '').trim();
+  const lowerText = text.toLowerCase();
+  
+  // Check 1: Title or key title segments repetition
+  if (title && title.length >= 8) {
+    const cleanTitle = title.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim();
+    const titleWords = cleanTitle.split(/\s+/).filter(w => w.length >= 3);
+    if (titleWords.length >= 3) {
+      for (let i = 0; i <= titleWords.length - 3; i++) {
+        const phrase = titleWords.slice(i, i + 3).join(' ');
+        const matches = lowerText.split(phrase).length - 1;
+        if (matches >= 3) {
+          return true;
+        }
+      }
+    }
+  }
+  
+  // Check 2: Repeated 4-word sequences (sliding window)
+  const words = lowerText.replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(Boolean);
+  const stopWords = new Set(getStopWords(lang));
+  const phraseCounts = {};
+  for (let i = 0; i <= words.length - 4; i++) {
+    const phraseWords = words.slice(i, i + 4);
+    if (phraseWords.every(w => stopWords.has(w))) continue;
+    const phrase = phraseWords.join(' ');
+    phraseCounts[phrase] = (phraseCounts[phrase] || 0) + 1;
+    if (phraseCounts[phrase] >= 3) {
+      return true;
+    }
   }
   
   return false;
@@ -783,7 +1076,17 @@ function isSupplierDescription(html) {
     'factory direct',
     'no package box',
     'opp bag package',
-    'satisfaction guarantee contact us'
+    'satisfaction guarantee contact us',
+    // Calibrate: Add typical supplier-style fields
+    'choice: yes',
+    'choice: no',
+    'package size',
+    'packing list',
+    'model number:',
+    'brand name:',
+    'origin:',
+    'applicable season',
+    'applicable scene'
   ];
   
   let phraseMatches = 0;
@@ -792,11 +1095,10 @@ function isSupplierDescription(html) {
       phraseMatches++;
     }
   }
-  
   return phraseMatches >= 1;
 }
 
-function calculateDescriptionQualityScore(html, title, lang = 'en') {
+async function calculateDescriptionQualityScore(html, title, lang = 'en') {
   if (!html) return 0;
   const text = html.replace(/<[^>]*>?/gm, '').trim();
   const wordCount = text.split(/\s+/).filter(Boolean).length;
@@ -865,8 +1167,9 @@ function calculateDescriptionQualityScore(html, title, lang = 'en') {
   }
   
   // 4. Commercial Strength / Differentiation (max 25%)
-  const isSpec = isSpecDumpDescription(html, lang);
   const isSupp = isSupplierDescription(html);
+  const isSpec = !isSupp && isSpecDumpDescription(html, lang);
+  const isRepetitive = isRepetitiveGenericDescription(html, title, lang);
   
   if (isSpec) {
     score -= 30;
@@ -874,15 +1177,30 @@ function calculateDescriptionQualityScore(html, title, lang = 'en') {
   if (isSupp) {
     score -= 20;
   }
+  if (isRepetitive) {
+    score -= 25;
+  }
   
-  return Math.max(0, Math.min(100, score));
+  const finalHeuristicScore = Math.max(0, Math.min(100, score));
+
+  // AI Fallback Strategy (Section 1.2 & 7.1)
+  // To avoid unnecessary cost, we only call OpenAI for borderline heuristic scores (40 to 65).
+  if (finalHeuristicScore >= 40 && finalHeuristicScore <= 65) {
+    const aiResult = await evaluateDescriptionQualityWithAI(title, html);
+    if (aiResult && typeof aiResult.score === 'number') {
+      console.log(`🤖 [OpenAI Fallback] Overrode borderline heuristic score ${finalHeuristicScore} with AI score ${aiResult.score} for "${title}".`);
+      return aiResult.score;
+    }
+  }
+  
+  return finalHeuristicScore;
 }
 
 function buildScoreExplanations(issues, scores) {
   const pricingIssues = issues.filter(i => ['PRICING_ERROR', 'ABSOLUTE_PRICING_ANOMALY'].includes(i.type));
   const titleIssues = issues.filter(i => ['INVALID_PRODUCT_TITLE', 'WEAK_PRODUCT_TITLE', 'SERIAL_PRODUCT_TITLE', 'KEYWORD_STUFFED_TITLE'].includes(i.type));
-  const descIssues = issues.filter(i => ['MISSING_DESCRIPTION', 'WEAK_DESCRIPTION', 'GENERIC_DESCRIPTION', 'SPEC_DUMP_DESCRIPTION', 'SUPPLIER_DESCRIPTION', 'MISSING_SIZE_GUIDE', 'MISSING_PRODUCT_SPECIFICATION'].includes(i.type));
-  const imageIssues = issues.filter(i => ['NO_PRODUCT_IMAGES', 'LOW_IMAGE_COUNT', 'EXCESSIVE_IMAGE_COUNT', 'DUPLICATE_IMAGES', 'LIMITED_IMAGE_DIVERSITY', 'LOW_QUALITY_IMAGE', 'INCONSISTENT_PRIMARY_IMAGE', 'INCONSISTENT_STORE_VISUALS'].includes(i.type));
+  const descIssues = issues.filter(i => ['MISSING_DESCRIPTION', 'WEAK_DESCRIPTION', 'GENERIC_DESCRIPTION', 'SPEC_DUMP_DESCRIPTION', 'SUPPLIER_DESCRIPTION', 'REPETITIVE_GENERIC_DESCRIPTION', 'MISSING_SIZE_GUIDE', 'MISSING_PRODUCT_SPECIFICATION'].includes(i.type));
+  const imageIssues = issues.filter(i => ['NO_PRODUCT_IMAGES', 'LOW_IMAGE_COUNT', 'EXCESSIVE_IMAGE_COUNT', 'DUPLICATE_IMAGES', 'LIMITED_IMAGE_DIVERSITY', 'LOW_QUALITY_IMAGE', 'BELOW_RECOMMENDED_RESOLUTION', 'POOR_PRESENTATION', 'INCONSISTENT_PRIMARY_IMAGE', 'INCONSISTENT_STORE_VISUALS'].includes(i.type));
   const consistencyIssues = issues.filter(i =>
     ['CATALOG_INCONSISTENCY', 'HIGH_FRAGMENTATION', 'INCONSISTENT_PRICE_POSITIONING', 'VARIANT_PRICE_GAP', 'COLLECTION_PRICE_OUTLIER', 'INCOMPLETE_ORGANIZATION', 'MISSING_RECOMMENDED_METAFIELDS'].includes(i.type)
   );
@@ -903,12 +1221,14 @@ function buildScoreExplanations(issues, scores) {
     if (descIssues.length > 0) {
       const specDumps = descIssues.filter(i => i.type === 'SPEC_DUMP_DESCRIPTION').length;
       const suppliers = descIssues.filter(i => i.type === 'SUPPLIER_DESCRIPTION').length;
+      const repetitive = descIssues.filter(i => i.type === 'REPETITIVE_GENERIC_DESCRIPTION').length;
       const genericOrWeak = descIssues.filter(i => ['MISSING_DESCRIPTION', 'WEAK_DESCRIPTION', 'GENERIC_DESCRIPTION'].includes(i.type)).length;
       
       const descParts = [];
       if (genericOrWeak > 0) descParts.push(`${genericOrWeak} product(s) have missing or insufficient descriptions`);
       if (specDumps > 0) descParts.push(`${specDumps} product(s) have spec-dump descriptions`);
       if (suppliers > 0) descParts.push(`${suppliers} product(s) have supplier-style descriptions`);
+      if (repetitive > 0) descParts.push(`${repetitive} product(s) have repetitive generic descriptions`);
       
       if (descParts.length > 0) {
         parts.push(descParts.join(', and '));
@@ -925,6 +1245,8 @@ function buildScoreExplanations(issues, scores) {
   const duplicates = issues.filter(i => i.type === 'DUPLICATE_IMAGES').length;
   const lowDiversity = issues.filter(i => i.type === 'LIMITED_IMAGE_DIVERSITY').length;
   const lowQuality = issues.filter(i => i.type === 'LOW_QUALITY_IMAGE').length;
+  const belowRecRes = issues.filter(i => i.type === 'BELOW_RECOMMENDED_RESOLUTION').length;
+  const poorPres = issues.filter(i => i.type === 'POOR_PRESENTATION').length;
   const inconsistentPrimary = issues.filter(i => i.type === 'INCONSISTENT_PRIMARY_IMAGE').length;
   const inconsistentVisuals = issues.filter(i => i.type === 'INCONSISTENT_STORE_VISUALS').length;
 
@@ -935,6 +1257,8 @@ function buildScoreExplanations(issues, scores) {
   if (duplicates > 0) visualParts.push(`${duplicates} product(s) contain duplicate images`);
   if (lowDiversity > 0) visualParts.push(`${lowDiversity} product(s) show limited image diversity`);
   if (lowQuality > 0) visualParts.push(`${lowQuality} product(s) contain pixelated or low-quality images`);
+  if (belowRecRes > 0) visualParts.push(`${belowRecRes} product(s) contain clear but below-recommended resolution images`);
+  if (poorPres > 0) visualParts.push(`${poorPres} product(s) contain poorly presented/cropped images`);
   if (inconsistentPrimary > 0) visualParts.push(`${inconsistentPrimary} product(s) have non-product primary images (e.g. size charts)`);
   if (inconsistentVisuals > 0) visualParts.push(`${inconsistentVisuals} product(s) are visually inconsistent with catalog aspect standards`);
 
@@ -983,11 +1307,31 @@ function buildScoreExplanations(issues, scores) {
     readinessExplanation += `Score impacted because ${readinessParts.join(', and ')}.`;
   }
 
+  // Fulfillment Trust
+  let fulfillmentTrustExplanation = 'Fulfillment Trust covers delivery speed estimates, dropshipping fulfillment model markers, and clear shipping tracking expectations. ';
+  const criticalDel = issues.filter(i => i.type === 'DELIVERY_RISK_CRITICAL').length;
+  const highDel = issues.filter(i => i.type === 'DELIVERY_RISK_HIGH').length;
+  const medDel = issues.filter(i => i.type === 'DELIVERY_RISK_MEDIUM').length;
+  const longNoComm = issues.filter(i => i.type === 'LONG_DELIVERY_NO_COMM').length;
+
+  const fulfillmentParts = [];
+  if (criticalDel > 0) fulfillmentParts.push(`${criticalDel} product(s) have critical delivery timelines or uncommunicated overseas shipping`);
+  if (highDel > 0) fulfillmentParts.push(`${highDel} product(s) have high delivery timelines or overseas dropshipping`);
+  if (medDel > 0) fulfillmentParts.push(`${medDel} product(s) have moderate delivery timelines or undocumented local fulfillment`);
+  if (longNoComm > 0) fulfillmentParts.push(`${longNoComm} product(s) have long delivery times without shipping tracking policies`);
+
+  if (fulfillmentParts.length === 0) {
+    fulfillmentTrustExplanation += 'No major delivery risks or dropship communication issues detected.';
+  } else {
+    fulfillmentTrustExplanation += `Score reduced because ${fulfillmentParts.join(', and ')}.`;
+  }
+
   return {
     dataQuality: { explanation: dataQualityExplanation },
     visualTrust: { explanation: visualTrustExplanation },
     consistency: { explanation: consistencyExplanation },
     readiness:   { explanation: readinessExplanation },
+    fulfillmentTrust: { explanation: fulfillmentTrustExplanation },
   };
 }
 
@@ -1170,23 +1514,21 @@ export async function processAuditRun(jobData) {
         }
 
         // Section 1.1 Enhanced Description Detection
-        if (isSpecDumpDescription(product.description)) {
-          issues.push({
-            auditRunId: auditRun.id,
-            type: 'SPEC_DUMP_DESCRIPTION',
-            severity: 'HIGH',
-            category: 'CONTENT',
-            affectedEntities: [product.shopifyId],
-            evidence: {
-              title: product.title,
-              descriptionLength: textLen,
-              businessImpact: 'Descriptions containing only specifications and no selling copy reduce buyer trust and conversion rates.',
-              confidence: 'HIGH',
-            },
-          });
-        }
+        let isSpec = false;
+        let isSupp = false;
+        let isRepetitive = false;
 
         if (isSupplierDescription(product.description)) {
+          isSupp = true;
+        } else if (isSpecDumpDescription(product.description, productLang)) {
+          isSpec = true;
+        }
+
+        if (isRepetitiveGenericDescription(product.description, product.title, productLang)) {
+          isRepetitive = true;
+        }
+
+        if (isSupp) {
           issues.push({
             auditRunId: auditRun.id,
             type: 'SUPPLIER_DESCRIPTION',
@@ -1197,6 +1539,38 @@ export async function processAuditRun(jobData) {
               title: product.title,
               descriptionLength: textLen,
               businessImpact: 'AliExpress/Temu-style phrases make the store look like a low-trust drop-shipping hub.',
+              confidence: 'HIGH',
+            },
+          });
+        } else if (isSpec) {
+          const specsAreAtBottom = checkIfSpecsAreAtBottom(product.description);
+          issues.push({
+            auditRunId: auditRun.id,
+            type: 'SPEC_DUMP_DESCRIPTION',
+            severity: 'HIGH',
+            category: 'CONTENT',
+            affectedEntities: [product.shopifyId],
+            evidence: {
+              title: product.title,
+              descriptionLength: textLen,
+              specsAreAtBottom,
+              businessImpact: 'Descriptions containing only specifications and no selling copy reduce buyer trust and conversion rates.',
+              confidence: 'HIGH',
+            },
+          });
+        }
+
+        if (isRepetitive) {
+          issues.push({
+            auditRunId: auditRun.id,
+            type: 'REPETITIVE_GENERIC_DESCRIPTION',
+            severity: 'MEDIUM',
+            category: 'CONTENT',
+            affectedEntities: [product.shopifyId],
+            evidence: {
+              title: product.title,
+              descriptionLength: textLen,
+              businessImpact: 'Repetitive headings, phrases, or product name stuffing lowers consumer trust and signals AI template content.',
               confidence: 'HIGH',
             },
           });
@@ -1507,8 +1881,22 @@ export async function processAuditRun(jobData) {
         }
       }
 
+      // ── Section 5: Fulfillment & Delivery Trust Engine ─────────────────────
+      const productVariantShopifyIds = product.variants.map(v => v.shopifyId);
+      const productHasUnrealisticInv = issues.some(i => i.type === 'UNREALISTIC_INVENTORY' && i.affectedEntities.some(id => productVariantShopifyIds.includes(id)));
+      const productHasUniformInv = issues.some(i => i.type === 'UNIFORM_INVENTORY' && i.affectedEntities.includes(product.shopifyId));
+      
+      const { issues: fulfillmentIssues } = auditProductFulfillment(
+        product,
+        auditRun.id,
+        imageIntelIssues,
+        productHasUnrealisticInv,
+        productHasUniformInv
+      );
+      issues.push(...fulfillmentIssues);
+
       // ── Calculate and Update Product Scores (Section 1 & 3) ───────────────
-      const descQualityScore = calculateDescriptionQualityScore(product.description, product.title, productLang);
+      const descQualityScore = await calculateDescriptionQualityScore(product.description, product.title, productLang);
       
       // 1. Title Quality (max 20 points)
       const isWeakTitleFlag = isWeakTitle(product.title, productLang);
@@ -1639,6 +2027,81 @@ export async function processAuditRun(jobData) {
       }
     }
 
+    // Catalog Dump Detection (Section 6.1)
+    if (totalProductCount >= 5) {
+      // 1. Weak/Invalid Titles count — each product derives its own lang inline
+      const weakTitleProdsCount = products.filter(product => {
+        const lang = product.detectedLanguage || shop.primaryLocale || detectProductLanguage(product.title, product.description).lang;
+        const isWeak = isWeakTitle(product.title, lang);
+        const isInvalid = isInvalidTitle(product.title);
+        const isSerial = isSerialTitle(product.title);
+        const isKeywordStuffed = isKeywordStuffedTitle(product.title, lang);
+        return isWeak || isInvalid || isSerial || isKeywordStuffed;
+      }).length;
+
+      // 2. Weak/Missing Descriptions count — each product derives its own lang inline
+      const descScores = await Promise.all(products.map(async product => {
+        const lang = product.detectedLanguage || shop.primaryLocale || detectProductLanguage(product.title, product.description).lang;
+        const score = await calculateDescriptionQualityScore(product.description, product.title, lang);
+        return score;
+      }));
+      const weakDescProdsCount = descScores.filter(score => score < 40).length;
+
+      // 3. Serial Titles count
+      const serialTitleProdsCount = products.filter(product => isSerialTitle(product.title)).length;
+
+      // 4. Unrealistic Inventory count
+      const unrealisticInvProdsCount = products.filter(product => {
+        const productVariantShopifyIds = product.variants.map(v => v.shopifyId);
+        return issues.some(i => i.type === 'UNREALISTIC_INVENTORY' && i.affectedEntities.some(id => productVariantShopifyIds.includes(id)));
+      }).length;
+
+      // 5. Incomplete Organization (missing categorization) count
+      const incompleteOrgProdsCount = products.filter(product => {
+        let collections = [];
+        if (product.collectionIds) {
+          try {
+            collections = Array.isArray(product.collectionIds)
+              ? product.collectionIds
+              : JSON.parse(String(product.collectionIds));
+          } catch { collections = []; }
+        }
+        return (product.published && collections.length === 0) || !product.productType || !product.tags;
+      }).length;
+
+      // Count conditions met
+      let conditionsMet = 0;
+      const thresholdRatio = 0.30;
+      
+      if (weakTitleProdsCount / totalProductCount >= thresholdRatio) conditionsMet++;
+      if (weakDescProdsCount / totalProductCount >= thresholdRatio) conditionsMet++;
+      if (serialTitleProdsCount / totalProductCount >= thresholdRatio) conditionsMet++;
+      if (unrealisticInvProdsCount / totalProductCount >= thresholdRatio) conditionsMet++;
+      if (incompleteOrgProdsCount / totalProductCount >= thresholdRatio) conditionsMet++;
+
+      // If at least 3/5 conditions are met, trigger warning
+      if (conditionsMet >= 3) {
+        issues.push({
+          auditRunId: auditRun.id,
+          type: 'CATALOG_DUMP_RISK',
+          severity: 'HIGH',
+          category: 'INVENTORY',
+          affectedEntities: [],
+          evidence: {
+            weakTitlesRatio: (weakTitleProdsCount / totalProductCount).toFixed(2),
+            weakDescriptionsRatio: (weakDescProdsCount / totalProductCount).toFixed(2),
+            serialTitlesRatio: (serialTitleProdsCount / totalProductCount).toFixed(2),
+            unrealisticInventoryRatio: (unrealisticInvProdsCount / totalProductCount).toFixed(2),
+            incompleteOrgRatio: (incompleteOrgProdsCount / totalProductCount).toFixed(2),
+            conditionsCount: conditionsMet,
+            reason: `Catalog exhibits ${conditionsMet} dump-like patterns (weak titles, generic/missing descriptions, serial titles, unrealistic stock, and lack of collections or tags).`,
+            businessImpact: 'Unstructured catalogs with supplier placeholders make stores look like untrustworthy dropship dumps, severely lowering ROAS and consumer trust.',
+            confidence: 'HIGH'
+          }
+        });
+      }
+    }
+
     // ── 7. PERSIST ISSUES & MERCHANT OVERRIDES ──────────────────────────────
     const overrides = await prisma.merchantOverride.findMany({
       where: { shopId },
@@ -1655,7 +2118,7 @@ export async function processAuditRun(jobData) {
     // ── 8. CALCULATE SCORES ────────────────────────────────────────────────
     const pricingIssues       = filteredIssues.filter(i => ['PRICING_ERROR', 'ABSOLUTE_PRICING_ANOMALY'].includes(i.type));
     const titleIssues         = filteredIssues.filter(i => ['INVALID_PRODUCT_TITLE', 'WEAK_PRODUCT_TITLE', 'SERIAL_PRODUCT_TITLE', 'KEYWORD_STUFFED_TITLE'].includes(i.type));
-    const descIssues          = filteredIssues.filter(i => ['MISSING_DESCRIPTION', 'WEAK_DESCRIPTION', 'GENERIC_DESCRIPTION', 'SPEC_DUMP_DESCRIPTION', 'SUPPLIER_DESCRIPTION', 'MISSING_SIZE_GUIDE', 'MISSING_PRODUCT_SPECIFICATION'].includes(i.type));
+    const descIssues          = filteredIssues.filter(i => ['MISSING_DESCRIPTION', 'WEAK_DESCRIPTION', 'GENERIC_DESCRIPTION', 'SPEC_DUMP_DESCRIPTION', 'SUPPLIER_DESCRIPTION', 'REPETITIVE_GENERIC_DESCRIPTION', 'MISSING_SIZE_GUIDE', 'MISSING_PRODUCT_SPECIFICATION'].includes(i.type));
     const allImageIssues      = filteredIssues.filter(i => ['NO_PRODUCT_IMAGES', 'LOW_IMAGE_COUNT', 'EXCESSIVE_IMAGE_COUNT'].includes(i.type));
     const noImageIssues       = filteredIssues.filter(i => i.type === 'NO_PRODUCT_IMAGES');
     const allConsistencyIssues = filteredIssues.filter(i =>
@@ -1680,6 +2143,7 @@ export async function processAuditRun(jobData) {
         - (descIssues.filter(i => i.type === 'GENERIC_DESCRIPTION').length * 3)
         - (descIssues.filter(i => i.type === 'SPEC_DUMP_DESCRIPTION').length * 15)
         - (descIssues.filter(i => i.type === 'SUPPLIER_DESCRIPTION').length * 10)
+        - (descIssues.filter(i => i.type === 'REPETITIVE_GENERIC_DESCRIPTION').length * 8)
         - (descIssues.filter(i => i.type === 'MISSING_SIZE_GUIDE').length * 10)
         - (descIssues.filter(i => i.type === 'MISSING_PRODUCT_SPECIFICATION').length * 5)
       ),
@@ -1691,6 +2155,8 @@ export async function processAuditRun(jobData) {
         - (filteredIssues.filter(i => i.type === 'DUPLICATE_IMAGES').length * 10)
         - (filteredIssues.filter(i => i.type === 'LIMITED_IMAGE_DIVERSITY').length * 5)
         - (filteredIssues.filter(i => i.type === 'LOW_QUALITY_IMAGE').length * 15)
+        - (filteredIssues.filter(i => i.type === 'BELOW_RECOMMENDED_RESOLUTION').length * 8)
+        - (filteredIssues.filter(i => i.type === 'POOR_PRESENTATION').length * 5)
         - (filteredIssues.filter(i => i.type === 'INCONSISTENT_PRIMARY_IMAGE').length * 20)
         - (filteredIssues.filter(i => i.type === 'INCONSISTENT_STORE_VISUALS').length * 5)
       ),
@@ -1700,6 +2166,135 @@ export async function processAuditRun(jobData) {
         - (allConsistencyIssues.filter(i => i.type === 'INCOMPLETE_ORGANIZATION').length * 2)
         - (allConsistencyIssues.filter(i => i.type === 'MISSING_RECOMMENDED_METAFIELDS').length * 2)
       ),
+      fulfillmentTrust: (() => {
+        const fIssues = filteredIssues.filter(i => ['DELIVERY_RISK_LOW', 'DELIVERY_RISK_MEDIUM', 'DELIVERY_RISK_HIGH', 'DELIVERY_RISK_CRITICAL'].includes(i.type));
+        const longDelNoCommIssues = filteredIssues.filter(i => i.type === 'LONG_DELIVERY_NO_COMM');
+        
+        let dropshipDeductions = 0;
+        let riskDeductions = 0;
+        
+        for (const issue of fIssues) {
+          const model = issue.evidence?.fulfillmentModel;
+          const type = issue.type;
+          
+          if (model === 'OVERSEAS_DROPSHIP') {
+            dropshipDeductions += 5;
+          }
+          
+          if (type === 'DELIVERY_RISK_CRITICAL') {
+            riskDeductions += 12;
+          } else if (type === 'DELIVERY_RISK_HIGH') {
+            riskDeductions += 6;
+          } else if (type === 'DELIVERY_RISK_MEDIUM') {
+            riskDeductions += 3;
+          }
+        }
+        
+        const longDelDeductions = longDelNoCommIssues.length * 8;
+        
+        return Math.max(0, 100 - dropshipDeductions - riskDeductions - longDelDeductions);
+      })(),
+      dropshippingPerception: (() => {
+        let score = 100;
+        
+        const unrealisticInv = filteredIssues.filter(i => i.type === 'UNREALISTIC_INVENTORY');
+        const uniqueUnrealisticProds = new Set();
+        unrealisticInv.forEach(i => {
+          (i.affectedEntities || []).forEach(vid => {
+            const prod = products.find(p => p.variants.some(v => v.shopifyId === vid));
+            if (prod) uniqueUnrealisticProds.add(prod.shopifyId);
+          });
+        });
+        score -= uniqueUnrealisticProds.size * 10;
+        
+        const uniformInv = filteredIssues.filter(i => i.type === 'UNIFORM_INVENTORY');
+        const uniqueUniformProds = new Set(uniformInv.flatMap(i => i.affectedEntities || []));
+        score -= uniqueUniformProds.size * 5;
+        
+        const supplierDesc = filteredIssues.filter(i => i.type === 'SUPPLIER_DESCRIPTION');
+        const uniqueSupplierProds = new Set(supplierDesc.flatMap(i => i.affectedEntities || []));
+        score -= uniqueSupplierProds.size * 15;
+        
+        const specDumpDesc = filteredIssues.filter(i => i.type === 'SPEC_DUMP_DESCRIPTION');
+        const uniqueSpecDumpProds = new Set(specDumpDesc.flatMap(i => i.affectedEntities || []));
+        score -= uniqueSpecDumpProds.size * 10;
+        
+        const lowQualityImg = filteredIssues.filter(i => i.type === 'LOW_QUALITY_IMAGE');
+        const uniqueLowQualityProds = new Set(lowQualityImg.flatMap(i => i.affectedEntities || []));
+        score -= uniqueLowQualityProds.size * 10;
+        
+        const duplicateImg = filteredIssues.filter(i => i.type === 'DUPLICATE_IMAGES');
+        const uniqueDuplicateProds = new Set(duplicateImg.flatMap(i => i.affectedEntities || []));
+        score -= uniqueDuplicateProds.size * 5;
+        
+        // BELOW_RECOMMENDED_RESOLUTION and POOR_PRESENTATION affect dropshipping perception
+        const belowRec = filteredIssues.filter(i => i.type === 'BELOW_RECOMMENDED_RESOLUTION');
+        const uniqueBelowRecProds = new Set(belowRec.flatMap(i => i.affectedEntities || []));
+        score -= uniqueBelowRecProds.size * 3;
+
+        const poorPres = filteredIssues.filter(i => i.type === 'POOR_PRESENTATION');
+        const uniquePoorPresProds = new Set(poorPres.flatMap(i => i.affectedEntities || []));
+        score -= uniquePoorPresProds.size * 5;
+        
+        const dropshipDelivery = filteredIssues.filter(i => 
+          ['DELIVERY_RISK_LOW', 'DELIVERY_RISK_MEDIUM', 'DELIVERY_RISK_HIGH', 'DELIVERY_RISK_CRITICAL'].includes(i.type) && 
+          i.evidence?.fulfillmentModel === 'OVERSEAS_DROPSHIP'
+        );
+        const uniqueDropshipDeliveryProds = new Set(dropshipDelivery.flatMap(i => i.affectedEntities || []));
+        score -= uniqueDropshipDeliveryProds.size * 15;
+        
+        const priceConsistency = filteredIssues.filter(i => ['VARIANT_PRICE_GAP', 'CATALOG_INCONSISTENCY'].includes(i.type));
+        const uniquePriceConsistProds = new Set(priceConsistency.flatMap(i => i.affectedEntities || []));
+        score -= uniquePriceConsistProds.size * 10;
+        
+        if (filteredIssues.some(i => i.type === 'HIGH_FRAGMENTATION')) {
+          score -= 20;
+        }
+        if (filteredIssues.some(i => ['COLLECTION_PRICE_OUTLIER', 'INCONSISTENT_PRICE_POSITIONING'].includes(i.type))) {
+          score -= 15;
+        }
+        
+        return Math.max(0, Math.min(100, score));
+      })(),
+      catalogMaintenance: (() => {
+        let score = 100;
+        
+        const dIssues = filteredIssues.filter(i => ['WEAK_DESCRIPTION', 'MISSING_DESCRIPTION', 'GENERIC_DESCRIPTION', 'REPETITIVE_GENERIC_DESCRIPTION'].includes(i.type));
+        const uniqueDescProds = new Set(dIssues.flatMap(i => i.affectedEntities || []));
+        score -= uniqueDescProds.size * 5;
+        
+        const tIssues = filteredIssues.filter(i => ['WEAK_PRODUCT_TITLE', 'INVALID_PRODUCT_TITLE', 'SERIAL_PRODUCT_TITLE', 'KEYWORD_STUFFED_TITLE'].includes(i.type));
+        const uniqueTitleProds = new Set(tIssues.flatMap(i => i.affectedEntities || []));
+        score -= uniqueTitleProds.size * 5;
+        
+        const ghostListings = filteredIssues.filter(i => i.type === 'GHOST_LISTING');
+        const uniqueGhostProds = new Set(ghostListings.flatMap(i => i.affectedEntities || []));
+        score -= uniqueGhostProds.size * 15;
+        
+        const imageIssues = filteredIssues.filter(i => ['NO_PRODUCT_IMAGES', 'LOW_IMAGE_COUNT', 'BELOW_RECOMMENDED_RESOLUTION', 'POOR_PRESENTATION'].includes(i.type));
+        const uniqueImageProds = new Set(imageIssues.flatMap(i => i.affectedEntities || []));
+        score -= uniqueImageProds.size * 8;
+        
+        const supplierIssues = filteredIssues.filter(i => ['SUPPLIER_DESCRIPTION', 'SPEC_DUMP_DESCRIPTION'].includes(i.type));
+        const uniqueSupplierProds = new Set(supplierIssues.flatMap(i => i.affectedEntities || []));
+        score -= uniqueSupplierProds.size * 10;
+        
+        const inventoryIssues = filteredIssues.filter(i => i.type === 'UNIFORM_INVENTORY');
+        const uniqueInvProds = new Set(inventoryIssues.flatMap(i => i.affectedEntities || []));
+        score -= uniqueInvProds.size * 10;
+        
+        const unrealisticInv = filteredIssues.filter(i => i.type === 'UNREALISTIC_INVENTORY');
+        const uniqueUnrealisticProds = new Set();
+        unrealisticInv.forEach(i => {
+          (i.affectedEntities || []).forEach(vid => {
+            const prod = products.find(p => p.variants.some(v => v.shopifyId === vid));
+            if (prod) uniqueUnrealisticProds.add(prod.shopifyId);
+          });
+        });
+        score -= uniqueUnrealisticProds.size * 10;
+        
+        return Math.max(0, Math.min(100, score));
+      })(),
     };
 
     const baseReadiness = (scores.productDataQuality * 0.4) + (scores.visualTrust * 0.4) + (scores.catalogConsistency * 0.2);
@@ -1707,11 +2302,77 @@ export async function processAuditRun(jobData) {
     if (criticalIssues.length > 0) conversionReadiness = Math.min(conversionReadiness, 45);
     scores.conversionReadiness = conversionReadiness;
 
+    // Trust Score calculation
+    scores.trustScore = (() => {
+      const pDQ = scores.productDataQuality;
+      const vT = scores.visualTrust;
+      const cC = scores.catalogConsistency;
+      const fT = scores.fulfillmentTrust;
+      const cR = scores.conversionReadiness;
+      
+      let score = Math.round(
+        (pDQ * 0.25) +
+        (vT * 0.20) +
+        (cC * 0.15) +
+        (fT * 0.25) +
+        (cR * 0.15)
+      );
+      
+      if (filteredIssues.some(i => i.type === 'CATALOG_DUMP_RISK')) {
+        score -= 25;
+      }
+      
+      return Math.max(0, Math.min(100, score));
+    })();
+
+    // Trust Classification mapping
+    scores.trustClassification = (() => {
+      const trustVal = scores.trustScore;
+      const maintVal = scores.catalogMaintenance;
+      const perceptionVal = scores.dropshippingPerception;
+      const fulfillVal = scores.fulfillmentTrust;
+      
+      const avg = (trustVal + maintVal + perceptionVal + fulfillVal) / 4;
+      
+      let classification = 'Fair';
+      if (avg >= 85) {
+        classification = 'Excellent';
+      } else if (avg >= 70) {
+        classification = 'Good';
+      } else if (avg >= 55) {
+        classification = 'Fair';
+      } else if (avg >= 40) {
+        classification = 'At Risk';
+      } else {
+        classification = 'High Risk';
+      }
+      
+      // Fail-safe override:
+      if (trustVal < 40 || fulfillVal < 40) {
+        if (classification === 'Excellent' || classification === 'Good' || classification === 'Fair') {
+          classification = 'At Risk';
+        }
+      }
+      if (trustVal < 25 || fulfillVal < 25) {
+        classification = 'High Risk';
+      }
+      
+      return classification;
+    })();
+
     const explanations = buildScoreExplanations(filteredIssues, scores);
 
     await prisma.auditRun.update({
       where: { id: auditRun.id },
-      data: { status: 'COMPLETED', completedAt: new Date() },
+      data: { 
+        status: 'COMPLETED', 
+        completedAt: new Date(),
+        fulfillmentTrust: scores.fulfillmentTrust,
+        trustScore: scores.trustScore,
+        dropshippingPerception: scores.dropshippingPerception,
+        catalogMaintenance: scores.catalogMaintenance,
+        trustClassification: scores.trustClassification
+      },
     });
 
     console.log(`✅ Phase 2 audit completed for shop ${shopId}. Found ${filteredIssues.length} issues.`);

@@ -207,19 +207,10 @@ export default function Pricing() {
             )}
 
             <div style={{ margin: "24px 0" }}>
-              {plan.name === 'Light' ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  <Text as="h3" variant="heading3xl">$0.00 <span style={{ fontSize: "16px", fontWeight: "normal", color: "var(--p-color-text-subdued)" }}>first month</span></Text>
-                  <Text as="p" variant="bodySm" tone="subdued">then ${plan.price}/mo</Text>
-                </div>
-              ) : plan.name === 'Growth' || plan.name === 'Pro' ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  <Text as="h3" variant="heading3xl">$1.00 <span style={{ fontSize: "16px", fontWeight: "normal", color: "var(--p-color-text-subdued)" }}>first month</span></Text>
-                  <Text as="p" variant="bodySm" tone="subdued">then ${plan.price}/mo</Text>
-                </div>
-              ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                 <Text as="h3" variant="heading3xl">${plan.price} <span style={{ fontSize: "16px", fontWeight: "normal", color: "var(--p-color-text-subdued)" }}>/mo</span></Text>
-              )}
+                <Text as="p" variant="bodySm" tone="success">30-day free trial included</Text>
+              </div>
             </div>
             <Button 
               primary={plan.isPopular && !isCurrentPlan} 

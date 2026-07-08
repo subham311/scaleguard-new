@@ -206,6 +206,13 @@ model AuditRun {
   startedAt         DateTime?
   completedAt       DateTime?
   
+  // Phase 3 Scores
+  trustScore              Float?
+  dropshippingPerception  Float?
+  catalogMaintenance      Float?
+  fulfillmentTrust        Float?
+  trustClassification     String?   // Excellent/Good/Fair/At Risk/High Risk
+  
   issues            Issue[]
   
   createdAt         DateTime  @default(now())
