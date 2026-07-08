@@ -32,3 +32,4 @@ web/database.sqlite
 .shopify.lock
 *.txt
 .vscode
+scratch

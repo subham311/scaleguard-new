@@ -435,6 +435,8 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
     let productBreakdown = [];
     let isDataSufficient = true;
     let dataIssues = [];
+    let commercialRecommendations = [];
+    let quickWins = [];
 
     // Basic data sufficiency check (independent of audit)
     if (products.length < 5) {
@@ -1007,7 +1009,7 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
       });
 
       // ── 7.2 COMMERCIAL RECOMMENDATIONS ────────────────────────────────────
-      const commercialRecommendations = [];
+      commercialRecommendations = [];
       
       const supplierIssuesCount = issues.filter(i => i.type === 'SUPPLIER_DESCRIPTION').length;
       if (supplierIssuesCount > 0) {
@@ -1102,7 +1104,7 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
         });
       }
       
-      const quickWins = possibleQuickWins
+      quickWins = possibleQuickWins
         .sort((a, b) => b.priority - a.priority)
         .slice(0, 5)
         .map(w => ({
