@@ -2,6 +2,7 @@ import express from 'express';
 import prisma from '../config/database.js';
 import { authenticateShop } from '../middleware/auth.js';
 import { authenticateFlexible } from '../middleware/sessionToken.js';
+import { sendSupportEmail } from '../services/emailService.js';
 
 const router = express.Router();
 const REVIEW_BYPASS_SHOPS = new Set(['daf2cb-2.myshopify.com']);
@@ -1616,7 +1617,50 @@ router.post('/overrides', authenticateFlexible, async (req, res) => {
   }
 });
 
+// Submit a support inquiry (subscriber only)
+router.post('/support', authenticateFlexible, async (req, res) => {
+  try {
+    const shop = req.shop;
+    
+    // Get subscription and check status
+    const subscription = await prisma.subscription.findUnique({
+      where: { shopId: shop.id },
+    });
 
+    if (!subscription || subscription.status !== 'ACTIVE') {
+      return res.status(403).json({
+        error: 'Active subscription required',
+        upgradeRequired: true,
+      });
+    }
+
+    const { name, email, subject, message } = req.body;
+
+    // Validation
+    if (!name || !email || !subject || !message) {
+      return res.status(400).json({
+        error: 'All fields (name, email, subject, message) are required.',
+      });
+    }
+
+    // Call email service to send the inquiry
+    await sendSupportEmail({
+      name,
+      email,
+      subject,
+      message,
+      shopDomain: shop.shopDomain,
+    });
+
+    res.json({
+      success: true,
+      message: 'We have received your enquiry and will get back to you within 48 hours.',
+    });
+  } catch (error) {
+    console.error('Support route error:', error);
+    res.status(500).json({ error: 'Failed to submit support inquiry.' });
+  }
+});
 
 export default router;
 

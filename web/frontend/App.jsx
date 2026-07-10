@@ -21,6 +21,7 @@ export default function App() {
             <a href="/" rel="home" />
             <a href="/Dashboard">Dashboard</a>
             <a href="/Pricing">Pricing</a>
+            <a href="/HelpCenter">Help Center</a>
           </NavMenu>
           <Routes pages={pages} />
         </QueryProvider>
