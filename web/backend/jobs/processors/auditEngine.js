@@ -177,6 +177,21 @@ export function auditProductImages(product, auditRunId, isVisualOverride, domina
   }
 
   if (lowQualityImages.length > 0) {
+    // Determine the primary subtype for display purposes
+    const hasLowRes = lowQualityImages.some(img => img.reasons.includes('low-resolution'));
+    const hasDistorted = lowQualityImages.some(img => img.reasons.includes('distorted aspect-ratio'));
+    const hasPlaceholder = lowQualityImages.some(img => img.reasons.includes('placeholder/thumbnail indicator'));
+    
+    let primarySubtype = 'LOW_RESOLUTION';
+    if (hasDistorted && !hasLowRes) primarySubtype = 'DISTORTED';
+    else if (hasPlaceholder && !hasLowRes && !hasDistorted) primarySubtype = 'PLACEHOLDER';
+    
+    // Collect all subtypes present
+    const subtypes = [];
+    if (hasLowRes) subtypes.push('LOW_RESOLUTION');
+    if (hasDistorted) subtypes.push('DISTORTED');
+    if (hasPlaceholder) subtypes.push('PLACEHOLDER');
+
     issues.push({
       auditRunId,
       type: 'LOW_QUALITY_IMAGE',
@@ -187,12 +202,15 @@ export function auditProductImages(product, auditRunId, isVisualOverride, domina
         title,
         lowQualityCount: lowQualityImages.length,
         lowQualityDetails: lowQualityImages,
+        imageQualitySubtype: primarySubtype,
+        allSubtypes: subtypes,
         reason: 'Pixelated, blurry, or extremely low-resolution images detected.',
         businessImpact: 'Blurry images decrease perceived brand quality and conversions.',
         confidence: 'HIGH',
       }
     });
   }
+
 
   // 4. INCONSISTENT_PRIMARY_IMAGE
   const primaryImg = images.find(img => img.position === 1) || images[0];
@@ -688,12 +706,16 @@ export function auditProductFulfillment(product, auditRunId, imageIntelIssues = 
         title,
         deliveryEstimateDays: estimate,
         fulfillmentModel: model,
+        isSubReasonOf: 'DELIVERY_RISK_CRITICAL',
+        subReasonLabel: 'Weak Customer Expectation Management',
         reason: `Long shipping estimate of ${estimate} days is published without clear tracking or shipping updates.`,
         businessImpact: 'Failing to communicate long shipping times creates severe customer friction and chargeback risks.',
+        advisory: 'Long delivery times are often associated with low-trust dropshipping experiences, especially when products appear generic or supplier-sourced. If delivery cannot be improved, make the shipping timeline very clear before purchase to reduce refunds, chargebacks and customer complaints.',
         confidence: 'HIGH'
       }
     });
   }
+
 
   return { issues, model, comm, estimate };
 }
@@ -892,22 +914,58 @@ function isKeywordStuffedTitle(title, lang = 'en') {
   return false;
 }
 
-function isDimensionalOrQuantityProduct(variants) {
+function isDimensionalOrQuantityProduct(variants, productTitle = '') {
   if (!variants || variants.length === 0) return false;
   
-  // Dimensional pattern: e.g., "50x80", "50 x 80", "2 * 4"
+  // ── Product-level category detection ─────────────────────────────────────
+  // These product categories have commercially justified price differences
+  // based on size, area, volume, or quantity — do NOT flag as price gaps.
+  const dimensionalProductCategories = [
+    // Area/flooring products
+    'carpet', 'rug', 'rugs', 'flooring', 'floor mat', 'doormat', 'bath mat',
+    'runner', 'area rug', 'kilim', 'jute rug', 'shaggy rug',
+    // Fabric/material by the metre/yard
+    'fabric', 'wallpaper', 'canvas', 'leather', 'lining', 'material', 'cloth',
+    'textile', 'vinyl', 'felt', 'foam', 'padding',
+    // Furniture/large items
+    'sofa', 'couch', 'bed', 'mattress', 'desk', 'table', 'shelving', 'shelves',
+    'wardrobe', 'cabinet', 'bookcase', 'bookshelf', 'dresser', 'chest',
+    // Quantity packs / bulk items
+    'box of', 'case of', 'bundle', 'multipack', 'bulk',
+    // Lumber / construction
+    'timber', 'plywood', 'board', 'panel', 'tile', 'brick', 'stone',
+    // Other dimensional products
+    'curtain', 'blind', 'shade', 'drape', 'bedsheet', 'duvet', 'quilt',
+    'tablecloth', 'cushion cover', 'pillow case',
+  ];
+
+  const titleLower = productTitle.toLowerCase();
+  if (dimensionalProductCategories.some(cat => titleLower.includes(cat))) {
+    return true;
+  }
+
+  // ── Variant-level detection ───────────────────────────────────────────────
+  // Dimensional pattern: e.g., "50x80", "50 x 80", "200x300cm", "2 * 4"
   const dimRegex = /\d+\s*(?:x|\*)\s*\d+/i;
   
-  // Unit pattern: e.g., "100ml", "2kg", "5 pack", "10pcs", "3 ft"
-  const unitRegex = /\b\d+\s*(?:cm|mm|inch|inches|ft|feet|yard|meters?|pcs|pack|pieces|kg|g|ml|l|liter|litre|oz|lbs?|gal|gallons?)\b/i;
+  // Unit pattern: e.g., "100ml", "2kg", "5 pack", "10pcs", "3 ft", "2sqm"
+  const unitRegex = /\b\d+\s*(?:cm|mm|inch|inches|ft|feet|yard|yards|meter|meters|metre|metres|sqm|sq\.?m|m²|pcs|pack|pieces|kg|g|ml|l|liter|litre|oz|lbs?|gal|gallons?|sqft|sq\.?ft|m|km)\b/i;
   
-  // Word indicators: e.g., "pack", "pcs", "pieces", "set of", "pair", "dimension", "size", "custom", "volume"
-  const wordIndicators = ['pack', 'pcs', 'pieces', 'set of', 'pair', 'dimension', 'size', 'custom', 'volume'];
+  // Word indicators in variant titles
+  const wordIndicators = [
+    'pack', 'pcs', 'pieces', 'set of', 'pair', 'pairs',
+    'dimension', 'size', 'custom', 'volume', 'length', 'width',
+    'small', 'medium', 'large', 'xl', 'xxl', 'xs',
+    'single', 'double', 'king', 'queen', 'twin', // bed sizes
+    'litre', 'liter', 'gallon', 'ounce',
+  ];
 
   for (const variant of variants) {
     if (!variant.title) continue;
     const title = variant.title.toLowerCase();
     
+    if (dimRegex.test(title)) return true;
+    if (unitRegex.test(title)) return true;
     if (wordIndicators.some(indicator => title.includes(indicator))) return true;
   }
   
@@ -1804,7 +1862,7 @@ export async function processAuditRun(jobData) {
       // Variant price gap (tiered)
       if (minPrice !== Infinity && maxPrice !== -Infinity && maxPrice > minPrice) {
         const ratio = maxPrice / minPrice;
-        const isDimensional = isDimensionalOrQuantityProduct(product.variants);
+        const isDimensional = isDimensionalOrQuantityProduct(product.variants, product.title);
         
         let gapSeverity = null;
         if (isDimensional) {

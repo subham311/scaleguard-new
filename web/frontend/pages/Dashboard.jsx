@@ -75,15 +75,14 @@ function SectionLabel({ children }) {
   );
 }
 
-function ScoreRing({ score, color }) {
-  const size = 64;
-  const stroke = 5;
+function ScoreRing({ score, color, size = 64 }) {
+  const stroke = size < 60 ? 4.5 : 5;
   const r = (size - stroke) / 2;
   const circ = 2 * Math.PI * r;
-  const fill = ((score || 0) / 100) * circ;
+  const fill = Math.min(circ, Math.max(0, ((score || 0) / 100) * circ));
 
   return (
-    <svg width={size} height={size} style={{ display: "block" }}>
+    <svg width={size} height={size} style={{ display: "block", flexShrink: 0 }}>
       <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={colors.border} strokeWidth={stroke} />
       <circle
         cx={size / 2}
@@ -97,7 +96,7 @@ function ScoreRing({ score, color }) {
         transform={`rotate(-90 ${size / 2} ${size / 2})`}
         style={{ transition: "stroke-dasharray 0.8s cubic-bezier(.4,0,.2,1)" }}
       />
-      <text x="50%" y="52%" dominantBaseline="middle" textAnchor="middle" fontSize="13" fontWeight="700" fill={colors.textPrimary}>
+      <text x="50%" y="52%" dominantBaseline="middle" textAnchor="middle" fontSize={size < 60 ? "11" : "13"} fontWeight="700" fill={colors.textPrimary}>
         {score ?? 0}%
       </text>
     </svg>
@@ -126,6 +125,73 @@ function SeverityPill({ severity }) {
       {cfg.label}
     </span>
   );
+}
+
+function parseRecommendation(recStr) {
+  if (!recStr || typeof recStr !== "string") {
+    return {
+      why: "",
+      matters: "",
+      trust: "",
+      conversion: "",
+      paid: "",
+      action: recStr || "",
+      shortSummary: recStr || "",
+    };
+  }
+
+  const lines = recStr.split("\n");
+  const parsed = {
+    why: "",
+    matters: "",
+    trust: "",
+    conversion: "",
+    paid: "",
+    action: "",
+  };
+
+  lines.forEach((line) => {
+    const trimmed = line.trim();
+    if (trimmed.startsWith("Why this was flagged:")) {
+      parsed.why = trimmed.replace("Why this was flagged:", "").trim();
+    } else if (trimmed.startsWith("Why it matters:")) {
+      parsed.matters = trimmed.replace("Why it matters:", "").trim();
+    } else if (trimmed.startsWith("Impact on trust:")) {
+      parsed.trust = trimmed.replace("Impact on trust:", "").trim();
+    } else if (trimmed.startsWith("Impact on conversion:")) {
+      parsed.conversion = trimmed.replace("Impact on conversion:", "").trim();
+    } else if (trimmed.startsWith("Impact on paid traffic:")) {
+      parsed.paid = trimmed.replace("Impact on paid traffic:", "").trim();
+    } else if (trimmed.startsWith("Recommended action:")) {
+      parsed.action = trimmed.replace("Recommended action:", "").trim();
+    }
+  });
+
+  let shortSummary = "";
+  if (parsed.action) {
+    shortSummary = parsed.action;
+  } else if (parsed.why) {
+    shortSummary = parsed.why;
+  } else {
+    shortSummary = lines[0];
+  }
+
+  return { ...parsed, shortSummary };
+}
+
+function getImpactBadgeStyle(impactVal) {
+  if (!impactVal) return { bg: "#F3F4F6", color: "#6D7175" };
+  const lower = impactVal.toLowerCase();
+  if (lower.includes("critical") || lower.includes("stop") || lower.includes("sink")) {
+    return { bg: colors.criticalBg, color: colors.critical };
+  }
+  if (lower.includes("high") || lower.includes("waste") || lower.includes("risk")) {
+    return { bg: colors.warningBg, color: colors.warning };
+  }
+  if (lower.includes("medium") || lower.includes("reduce") || lower.includes("roi")) {
+    return { bg: "#EFF5FF", color: "#1865C2" };
+  }
+  return { bg: "#F3F4F6", color: "#6D7175" };
 }
 
 const VERDICT_CONFIG = {
@@ -262,6 +328,9 @@ export default function Dashboard() {
   const products = data?.products || [];
   const shopDomain = data?.shop?.domain || "";
   const isFeatureLocked = data?.plan === "LIGHT" && false;
+  const storeReadinessNarrative = data?.storeReadinessNarrative || null;
+  const impactBucketSummary = data?.impactBucketSummary || null;
+  const deliveryAdvisory = data?.deliveryAdvisory || null;
 
   const filteredProducts = useMemo(() => {
     return products.filter((p) => {
@@ -542,6 +611,72 @@ export default function Dashboard() {
             </div>
           </Layout.Section>
 
+          {/* ── 1.5. Store Readiness Narrative ── */}
+          {storeReadinessNarrative && (
+            <Layout.Section>
+              <div style={{
+                padding: "16px 20px",
+                borderRadius: radius.md,
+                background: scores.conversionReadiness >= 85
+                  ? colors.successBg
+                  : scores.conversionReadiness >= 70
+                    ? colors.infoBg
+                    : scores.conversionReadiness >= 45
+                      ? "#FFFBF0"
+                      : colors.criticalBg,
+                border: `1px solid ${scores.conversionReadiness >= 85
+                  ? colors.success + '30'
+                  : scores.conversionReadiness >= 70
+                    ? colors.info + '30'
+                    : scores.conversionReadiness >= 45
+                      ? '#FFC40030'
+                      : colors.critical + '30'}`,
+                display: "flex",
+                alignItems: "flex-start",
+                gap: "14px",
+              }}>
+                <span style={{ fontSize: "20px", flexShrink: 0, marginTop: "1px" }}>
+                  {scores.conversionReadiness >= 85 ? '✅' :
+                   scores.conversionReadiness >= 70 ? 'ℹ️' :
+                   scores.conversionReadiness >= 45 ? '⚠️' : '🚨'}
+                </span>
+                <div>
+                  <div style={{ fontSize: "13px", fontWeight: 700, color: colors.textPrimary, marginBottom: "4px" }}>
+                    Store Readiness Summary
+                  </div>
+                  <div style={{ fontSize: "13px", color: colors.textSecondary, lineHeight: "1.6" }}>
+                    {storeReadinessNarrative}
+                  </div>
+                </div>
+              </div>
+            </Layout.Section>
+          )}
+
+          {/* ── Persistent Delivery Advisory (when acknowledged) ── */}
+          {deliveryAdvisory && (
+            <Layout.Section>
+              <div style={{
+                padding: "14px 18px",
+                borderRadius: radius.md,
+                background: "#FFF8F0",
+                border: "1px solid #FF990040",
+                display: "flex",
+                alignItems: "flex-start",
+                gap: "12px",
+              }}>
+                <span style={{ fontSize: "18px", flexShrink: 0 }}>📦</span>
+                <div>
+                  <div style={{ fontSize: "13px", fontWeight: 700, color: "#7A4A00", marginBottom: "4px" }}>
+                    {deliveryAdvisory.title}
+                  </div>
+                  <div style={{ fontSize: "12px", color: colors.textSecondary, lineHeight: "1.6" }}>
+                    {deliveryAdvisory.message}
+                  </div>
+                </div>
+              </div>
+            </Layout.Section>
+          )}
+
           {/* ── 2. Health Score Cards ── */}
           <Layout.Section>
             <SectionLabel>Catalog Health Overview</SectionLabel>
@@ -602,33 +737,41 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "16px" }}>
-                <div style={{ padding: "16px", background: colors.surfaceAlt, borderRadius: radius.md, border: `1px solid ${colors.border}`, display: "flex", alignItems: "center", gap: "14px" }}>
-                  <ScoreRing score={scores.trustScore} color={colors.accent} />
-                  <div>
-                    <div style={{ fontSize: "14px", fontWeight: 700, color: colors.textPrimary }}>Trust Score</div>
-                    <div style={{ fontSize: "11px", color: colors.textSecondary, marginTop: "2px" }}>Weighted trust index</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(215px, 1fr))", gap: "14px" }}>
+                <div style={{ padding: "16px 14px", background: colors.surfaceAlt, borderRadius: radius.md, border: `1px solid ${colors.border}`, display: "flex", alignItems: "center", gap: "12px", minWidth: 0 }}>
+                  <div style={{ flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <ScoreRing score={scores.trustScore} color={colors.accent} size={54} />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: "13px", fontWeight: 700, color: colors.textPrimary, lineHeight: "1.3" }}>Trust Score</div>
+                    <div style={{ fontSize: "11px", color: colors.textSecondary, marginTop: "2px", lineHeight: "1.3" }}>Weighted trust index</div>
                   </div>
                 </div>
-                <div style={{ padding: "16px", background: colors.surfaceAlt, borderRadius: radius.md, border: `1px solid ${colors.border}`, display: "flex", alignItems: "center", gap: "14px" }}>
-                  <ScoreRing score={scores.fulfillmentTrust} color="#00A3BF" />
-                  <div>
-                    <div style={{ fontSize: "14px", fontWeight: 700, color: colors.textPrimary }}>Fulfillment Trust</div>
-                    <div style={{ fontSize: "11px", color: colors.textSecondary, marginTop: "2px" }}>Delivery timeline & risk</div>
+                <div style={{ padding: "16px 14px", background: colors.surfaceAlt, borderRadius: radius.md, border: `1px solid ${colors.border}`, display: "flex", alignItems: "center", gap: "12px", minWidth: 0 }}>
+                  <div style={{ flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <ScoreRing score={scores.fulfillmentTrust} color="#00A3BF" size={54} />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: "13px", fontWeight: 700, color: colors.textPrimary, lineHeight: "1.3" }}>Fulfillment Trust</div>
+                    <div style={{ fontSize: "11px", color: colors.textSecondary, marginTop: "2px", lineHeight: "1.3" }}>Delivery timeline & risk</div>
                   </div>
                 </div>
-                <div style={{ padding: "16px", background: colors.surfaceAlt, borderRadius: radius.md, border: `1px solid ${colors.border}`, display: "flex", alignItems: "center", gap: "14px" }}>
-                  <ScoreRing score={scores.dropshippingPerception} color="#FF9900" />
-                  <div>
-                    <div style={{ fontSize: "14px", fontWeight: 700, color: colors.textPrimary }}>Dropship Perception</div>
-                    <div style={{ fontSize: "11px", color: colors.textSecondary, marginTop: "2px" }}>Import/supplier cues</div>
+                <div style={{ padding: "16px 14px", background: colors.surfaceAlt, borderRadius: radius.md, border: `1px solid ${colors.border}`, display: "flex", alignItems: "center", gap: "12px", minWidth: 0 }}>
+                  <div style={{ flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <ScoreRing score={scores.dropshippingPerception} color="#FF9900" size={54} />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: "13px", fontWeight: 700, color: colors.textPrimary, lineHeight: "1.3" }}>Dropship Perception</div>
+                    <div style={{ fontSize: "11px", color: colors.textSecondary, marginTop: "2px", lineHeight: "1.3" }}>Import & supplier cues</div>
                   </div>
                 </div>
-                <div style={{ padding: "16px", background: colors.surfaceAlt, borderRadius: radius.md, border: `1px solid ${colors.border}`, display: "flex", alignItems: "center", gap: "14px" }}>
-                  <ScoreRing score={scores.catalogMaintenance} color="#00B779" />
-                  <div>
-                    <div style={{ fontSize: "14px", fontWeight: 700, color: colors.textPrimary }}>Catalog Maintenance</div>
-                    <div style={{ fontSize: "11px", color: colors.textSecondary, marginTop: "2px" }}>Polish & metadata coverage</div>
+                <div style={{ padding: "16px 14px", background: colors.surfaceAlt, borderRadius: radius.md, border: `1px solid ${colors.border}`, display: "flex", alignItems: "center", gap: "12px", minWidth: 0 }}>
+                  <div style={{ flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <ScoreRing score={scores.catalogMaintenance} color="#00B779" size={54} />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: "13px", fontWeight: 700, color: colors.textPrimary, lineHeight: "1.3" }}>Catalog Maintenance</div>
+                    <div style={{ fontSize: "11px", color: colors.textSecondary, marginTop: "2px", lineHeight: "1.3" }}>Polish & metadata</div>
                   </div>
                 </div>
               </div>
@@ -701,13 +844,90 @@ export default function Dashboard() {
             </div>
           </Layout.Section>
 
+          {/* ── Impact Buckets ── */}
+          {impactBucketSummary && impactBucketSummary.length > 0 && (
+            <Layout.Section>
+              <SectionLabel>Issues By Commercial Impact</SectionLabel>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "12px" }}>
+                {impactBucketSummary.map((bucket) => {
+                  const bucketSeverityCfg = SEVERITY_CONFIG[bucket.highestSeverity?.toUpperCase()] || SEVERITY_CONFIG.LOW;
+                  return (
+                    <div
+                      key={bucket.bucket}
+                      style={{
+                        padding: "14px 16px",
+                        borderRadius: radius.md,
+                        background: colors.surface,
+                        border: `1px solid ${colors.border}`,
+                        boxShadow: shadow.card,
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "8px",
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                          <span style={{ fontSize: "16px" }}>{bucket.icon}</span>
+                          <span style={{ fontSize: "13px", fontWeight: 700, color: colors.textPrimary }}>{bucket.label}</span>
+                        </div>
+                        <span style={{
+                          padding: "2px 8px",
+                          borderRadius: "12px",
+                          background: bucketSeverityCfg.bg,
+                          color: bucketSeverityCfg.color,
+                          fontSize: "11px",
+                          fontWeight: 700,
+                        }}>
+                          {bucketSeverityCfg.label}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: "11px", color: colors.textSecondary, lineHeight: "1.4" }}>
+                        {bucket.description}
+                      </div>
+                      <div style={{ display: "flex", gap: "12px", marginTop: "4px" }}>
+                        <span style={{ fontSize: "12px", fontWeight: 700, color: colors.textPrimary }}>
+                          {bucket.issueCount} issue{bucket.issueCount !== 1 ? 's' : ''}
+                        </span>
+                        {bucket.affectedProductCount > 0 && (
+                          <span style={{ fontSize: "12px", color: colors.textSecondary }}>
+                            · {bucket.affectedProductCount} product{bucket.affectedProductCount !== 1 ? 's' : ''} affected
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </Layout.Section>
+          )}
+
           {/* ── 3. Priority Fixes ── */}
           <Layout.Section>
             <SectionLabel>Priority Risks Before Scaling</SectionLabel>
             <Card>
               <div style={{ padding: "14px 20px", borderBottom: `1px solid ${colors.border}` }}>
-                <div style={{ fontSize: "13px", color: colors.textSecondary }}>
-                  Grouped by issue type — tackle these to improve your readiness score.
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "8px" }}>
+                  <div style={{ fontSize: "13px", color: colors.textSecondary }}>
+                    Grouped by issue type — tackle these to improve your readiness score.
+                  </div>
+                  {issues.length > 0 && (
+                    <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                      {['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'].map(sev => {
+                        const count = issues.filter(i => i.severity?.toUpperCase() === sev).length;
+                        if (count === 0) return null;
+                        const cfg = SEVERITY_CONFIG[sev];
+                        return (
+                          <span key={sev} style={{
+                            padding: "2px 8px", borderRadius: "12px",
+                            background: cfg.bg, color: cfg.color,
+                            fontSize: "11px", fontWeight: 700,
+                          }}>
+                            {count} {cfg.label}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -723,6 +943,7 @@ export default function Dashboard() {
                     const { id, type, severity, recommendation, affectedCount, items, affectedProductTitles } = item;
                     const isExpanded = expandedIssues[id];
                     const cfg = SEVERITY_CONFIG[severity?.toUpperCase()] || SEVERITY_CONFIG.LOW;
+                    const parsedRec = parseRecommendation(recommendation);
 
                     return (
                       <div key={id} style={{ borderBottom: idx < issues.length - 1 ? `1px solid ${colors.border}` : "none" }}>
@@ -741,10 +962,13 @@ export default function Dashboard() {
                               width: "8px", height: "8px", borderRadius: "50%",
                               background: cfg.dot, flexShrink: 0,
                             }} />
-                            <div style={{ minWidth: 0 }}>
-                              <div style={{ fontSize: "14px", fontWeight: 600, color: colors.textPrimary, marginBottom: "2px" }}>{type}</div>
-                              <div style={{ fontSize: "12px", color: colors.textSecondary, lineHeight: "1.4", marginTop: "4px", whiteSpace: "pre-line" }}>
-                                {recommendation}
+                            <div style={{ minWidth: 0, flex: 1 }}>
+                              <div style={{ fontSize: "14px", fontWeight: 700, color: colors.textPrimary, marginBottom: "2px" }}>{type}</div>
+                              <div style={{
+                                fontSize: "12px", color: colors.textSecondary, lineHeight: "1.4",
+                                whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis"
+                              }}>
+                                {parsedRec.shortSummary}
                               </div>
                             </div>
                           </div>
@@ -775,6 +999,90 @@ export default function Dashboard() {
                             padding: "0 20px 16px 44px",
                             background: colors.surfaceAlt,
                           }}>
+                            {/* Structured Diagnosis & Action Panel */}
+                            <div style={{
+                              padding: "16px 20px",
+                              marginBottom: "14px",
+                              background: colors.surface,
+                              border: `1px solid ${colors.border}`,
+                              borderRadius: radius.md,
+                              boxShadow: shadow.card,
+                            }}>
+                              {/* Impact Badges */}
+                              {(parsedRec.trust || parsedRec.conversion || parsedRec.paid) && (
+                                <div style={{
+                                  display: "flex", flexWrap: "wrap", gap: "8px",
+                                  marginBottom: (parsedRec.why || parsedRec.action) ? "14px" : "0",
+                                  paddingBottom: (parsedRec.why || parsedRec.action) ? "12px" : "0",
+                                  borderBottom: (parsedRec.why || parsedRec.action) ? `1px solid ${colors.border}` : "none",
+                                }}>
+                                  {parsedRec.trust && (
+                                    <span style={{
+                                      display: "inline-flex", alignItems: "center", gap: "6px",
+                                      padding: "3px 10px", borderRadius: "14px",
+                                      background: getImpactBadgeStyle(parsedRec.trust).bg,
+                                      color: getImpactBadgeStyle(parsedRec.trust).color,
+                                      fontSize: "11px", fontWeight: 600,
+                                    }}>
+                                      🛡️ Trust: <strong>{parsedRec.trust}</strong>
+                                    </span>
+                                  )}
+                                  {parsedRec.conversion && (
+                                    <span style={{
+                                      display: "inline-flex", alignItems: "center", gap: "6px",
+                                      padding: "3px 10px", borderRadius: "14px",
+                                      background: getImpactBadgeStyle(parsedRec.conversion).bg,
+                                      color: getImpactBadgeStyle(parsedRec.conversion).color,
+                                      fontSize: "11px", fontWeight: 600,
+                                    }}>
+                                      ⚡ Conversion: <strong>{parsedRec.conversion}</strong>
+                                    </span>
+                                  )}
+                                  {parsedRec.paid && (
+                                    <span style={{
+                                      display: "inline-flex", alignItems: "center", gap: "6px",
+                                      padding: "3px 10px", borderRadius: "14px",
+                                      background: getImpactBadgeStyle(parsedRec.paid).bg,
+                                      color: getImpactBadgeStyle(parsedRec.paid).color,
+                                      fontSize: "11px", fontWeight: 600,
+                                    }}>
+                                      🎯 Paid Traffic: <strong>{parsedRec.paid}</strong>
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* Why & Action Grid */}
+                              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "12px" }}>
+                                {parsedRec.why && (
+                                  <div style={{ background: colors.surfaceAlt, padding: "12px 14px", borderRadius: radius.sm, border: `1px solid ${colors.border}` }}>
+                                    <div style={{ fontSize: "11px", fontWeight: 700, color: colors.textSecondary, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: "4px" }}>
+                                      Why Flagged & Business Impact
+                                    </div>
+                                    <div style={{ fontSize: "12px", color: colors.textPrimary, fontWeight: 500, lineHeight: "1.4" }}>
+                                      {parsedRec.why}
+                                    </div>
+                                    {parsedRec.matters && (
+                                      <div style={{ fontSize: "12px", color: colors.textSecondary, marginTop: "6px", lineHeight: "1.4" }}>
+                                        {parsedRec.matters}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+
+                                {parsedRec.action && (
+                                  <div style={{ background: "#F0F7FF", padding: "12px 14px", borderRadius: radius.sm, border: "1px solid #B4D5FF" }}>
+                                    <div style={{ fontSize: "11px", fontWeight: 700, color: colors.info, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: "4px" }}>
+                                      💡 Recommended Action
+                                    </div>
+                                    <div style={{ fontSize: "12px", color: colors.textPrimary, fontWeight: 600, lineHeight: "1.4" }}>
+                                      {parsedRec.action}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
                             <div style={{
                               background: colors.surface,
                               border: `1px solid ${colors.border}`,
@@ -791,6 +1099,7 @@ export default function Dashboard() {
                                 </span>
                                 <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
                                   <span style={{ fontSize: "11px", color: colors.textMuted }}>Click to edit</span>
+                                  {/* Override buttons */}
                                   {item.rawType && ['UNREALISTIC_INVENTORY', 'UNIFORM_INVENTORY'].includes(item.rawType) && (
                                     <>
                                       <div style={{ height: "12px", width: "1px", background: colors.border }} />
@@ -827,6 +1136,42 @@ export default function Dashboard() {
                                           <line x1="1" y1="1" x2="23" y2="23"></line>
                                         </svg>
                                         Ignore this rule because inventory visibility is not shown to customers on my storefront
+                                      </button>
+                                    </>
+                                  )}
+                                  {/* Delivery Risk override button */}
+                                  {item.rawType && item.rawType === 'DELIVERY_RISK_CRITICAL' && (
+                                    <>
+                                      <div style={{ height: "12px", width: "1px", background: colors.border }} />
+                                      <button
+                                        onClick={() => handleToggleOverride('DELIVERY_RISK_CRITICAL', true)}
+                                        disabled={isSavingOverride}
+                                        style={{
+                                          border: `1px solid #FF990050`,
+                                          background: "#FFF8F0",
+                                          color: "#7A4A00",
+                                          fontSize: "11px",
+                                          fontWeight: 600,
+                                          cursor: "pointer",
+                                          padding: "4px 10px",
+                                          borderRadius: "14px",
+                                          display: "flex",
+                                          alignItems: "center",
+                                          gap: "6px",
+                                          transition: "all 0.2s ease"
+                                        }}
+                                        onMouseEnter={(e) => {
+                                          e.currentTarget.style.background = colors.warningBg;
+                                          e.currentTarget.style.borderColor = colors.warning;
+                                          e.currentTarget.style.color = colors.warning;
+                                        }}
+                                        onMouseLeave={(e) => {
+                                          e.currentTarget.style.background = "#FFF8F0";
+                                          e.currentTarget.style.borderColor = "#FF990050";
+                                          e.currentTarget.style.color = "#7A4A00";
+                                        }}
+                                      >
+                                        📦 Acknowledge as Intentional Business Model (Dropshipping / Made-to-Order)
                                       </button>
                                     </>
                                   )}

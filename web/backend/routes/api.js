@@ -23,11 +23,11 @@ const RECOMMENDATION_TEMPLATES = {
   },
   LOW_IMAGE_COUNT: {
     why: "Product has too few images to build buyer confidence.",
-    matters: "Buyers expect to see alternative angles, detail close-ups, or lifestyle contexts.",
-    trust: "Weakens perceived store curation and professionalism.",
-    conversion: "Reduces conversion rates as customers feel they don't have the full picture.",
-    paid: "Lowers return on ad spend (ROAS) on social media campaigns.",
-    action: "Add at least 3-4 high-resolution product images showcasing different angles."
+    matters: "Buyers expect to see alternative angles, detail close-ups, or lifestyle contexts before committing to a purchase.",
+    trust: "Weakens perceived store curation and professionalism — buyers associate low image count with uncurated dropshipping stores.",
+    conversion: "Reduces conversion rates significantly as customers feel they don't have the full picture of what they're buying.",
+    paid: "Lowers return on ad spend (ROAS) on social media campaigns where visual variety drives higher engagement.",
+    action: "Add more product images to build buyer confidence. Include: different product angles (front, back, side), close-up detail shots showing texture and material quality, fit or scale images showing the product in context, lifestyle images showing the product being used, packaging images showing what the customer will receive, and material or fabric close-ups where relevant. If you do not have enough product photos, consider using AI image tools to create cleaner lifestyle or presentation images based on the real product — but make sure the images accurately represent what the customer will receive."
   },
   EXCESSIVE_IMAGE_COUNT: {
     why: "Product contains an unusually high number of images (20+).",
@@ -70,12 +70,12 @@ const RECOMMENDATION_TEMPLATES = {
     action: "Write a complete description detailing product features, benefits, and specifications."
   },
   WEAK_DESCRIPTION: {
-    why: "Description is too thin (under 75 words).",
-    matters: "Does not explain the product benefits or answer potential questions.",
-    trust: "Makes the store look cheap or unprofessional.",
-    conversion: "Creates buyer hesitation and lowers product checkout rates.",
-    paid: "Reduces advertising ROI due to weak landing page context.",
-    action: "Expand description with product benefits, design inspiration, and usage scenarios."
+    why: "Description is too thin (under 75 words) and does not provide enough information for a confident purchase decision.",
+    matters: "Buyers need detailed product information to understand what they are buying and feel confident before checkout.",
+    trust: "Thin descriptions signal a lazy or uncurated storefront, reducing buyer trust and brand authority.",
+    conversion: "Creates buyer hesitation and lowers product checkout rates — buyers seek out competitors with better information.",
+    paid: "Reduces advertising ROI because paid traffic lands on a page that cannot close the sale.",
+    action: "Add more useful product information to build buyer confidence. Your description should include: the material and fabric composition, fit and sizing guidance (how does it fit — true to size, runs large, slim fit?), key customer benefits and what problems the product solves, specific use cases and occasions the product is suited for, care instructions (washing, maintenance, storage), trust-building details (quality guarantees, craftsmanship notes, brand values), and what makes this product different from cheaper alternatives. The description should help the customer understand the product clearly and feel confident before buying."
   },
   GENERIC_DESCRIPTION: {
     why: "Description consists of boilerplate or placeholder text.",
@@ -302,12 +302,13 @@ const RECOMMENDATION_TEMPLATES = {
     action: "Define Shopify standard metafields for colors, materials, and features."
   },
   DELIVERY_RISK_CRITICAL: {
-    why: "Delivery timeline estimate is extremely long (>21 days) or dropshipping combined with poor tracking communication.",
-    matters: "Slow delivery times trigger payment holds and order cancellations.",
-    trust: "Destroys merchant authenticity, leading to immediate buyer friction.",
-    conversion: "Drops checkout conversion and raises support inquiries.",
-    paid: "Drastically lowers ROAS due to long shipping times.",
-    action: "Offer local warehouse fulfillment or add explicit delivery/tracking notifications."
+    why: "Delivery timeline estimate is extremely long (over 21 days) or overseas dropshipping is combined with poor tracking communication.",
+    matters: "Slow delivery times trigger payment disputes, order cancellations, chargeback risk, and severely reduce customer trust.",
+    trust: "Destroys merchant authenticity and signals a low-trust overseas supplier model to customers.",
+    conversion: "Drops checkout conversion significantly and raises support inquiry and refund rates.",
+    paid: "Drastically lowers ROAS — paid traffic that converts to frustrated customers damages your long-term ad account performance.",
+    action: "Offer local warehouse fulfillment where possible, or add explicit delivery/tracking notifications and a clear shipping timeline policy on the product page. If long delivery is an intentional part of your business model (dropshipping, made-to-order, or handmade products), make the shipping timeline very clear before purchase to reduce refunds, chargebacks and customer complaints. Note: Long delivery times are often associated with low-trust dropshipping experiences — even if excluded from the health score, ScaleGuard will continue to show an advisory reminder for this risk.",
+    advisory: "Long delivery times are often associated with low-trust dropshipping experiences, especially when products appear generic or supplier-sourced. Even if this issue is acknowledged as intentional, make the shipping timeline very clear before purchase to reduce refunds, chargebacks and customer complaints."
   },
   DELIVERY_RISK_HIGH: {
     why: "Delivery timeline is slow (15-21 days) and lacks clear tracking reassurance.",
@@ -334,12 +335,12 @@ const RECOMMENDATION_TEMPLATES = {
     action: "Highlight fast delivery badges on the storefront."
   },
   LONG_DELIVERY_NO_COMM: {
-    why: "Shipping timeline exceeds 10 days but has poor tracking expectations.",
-    matters: "Vague shipping details on slow packages trigger disputes.",
-    trust: "Creates buyer anxiety and chargeback risks.",
-    conversion: "Causes checkouts to stall at the shipping selection step.",
-    paid: "Reduces conversion value from shopping ads.",
-    action: "Add clear shipping policies and tracking details to the product layout."
+    why: "Shipping timeline exceeds 10 days but the product page has no clear tracking or delivery expectation information for the customer.",
+    matters: "Vague shipping details combined with long delivery times are one of the primary triggers for customer disputes, refund requests, and chargebacks.",
+    trust: "Creates buyer anxiety and significantly increases the risk of chargebacks, negative reviews, and loss of future purchases.",
+    conversion: "Causes checkout hesitation and shopping cart abandonment — buyers want to know when their order will arrive before committing.",
+    paid: "Reduces conversion value from shopping and social ads — paid traffic that doesn't convert due to delivery uncertainty wastes your budget.",
+    action: "Add a clear shipping timeline, tracking information policy, and delivery expectation block to the product description or page. Let customers know: when the order will be dispatched, estimated arrival timeframe, whether tracking is provided, and what to do if there is a delay. Clear communication about long delivery times dramatically reduces support requests and chargebacks."
   },
   CATALOG_DUMP_RISK: {
     why: "Catalog has high rate of unpolished titles, descriptions, and placeholder inventories.",
@@ -350,6 +351,96 @@ const RECOMMENDATION_TEMPLATES = {
     action: "Curate titles for readability, rewrite generic descriptions, and assign collections/tags."
   }
 };
+
+// ── Merchant-friendly display names ──────────────────────────────────────────
+const DISPLAY_NAMES = {
+  NO_PRODUCT_IMAGES:                'No Product Images',
+  LOW_IMAGE_COUNT:                  'Insufficient Product Images',
+  EXCESSIVE_IMAGE_COUNT:            'Excessive Image Count',
+  INVALID_PRODUCT_TITLE:            'Invalid Product Title',
+  WEAK_PRODUCT_TITLE:               'Weak Product Title',
+  SERIAL_PRODUCT_TITLE:             'Serial / Code-Based Title',
+  KEYWORD_STUFFED_TITLE:            'Keyword-Stuffed Title',
+  PRICING_ERROR:                    'Invalid Pricing',
+  ABSOLUTE_PRICING_ANOMALY:         'Pricing Anomaly',
+  MISSING_DESCRIPTION:              'Missing Description',
+  WEAK_DESCRIPTION:                 'Thin Description',
+  GENERIC_DESCRIPTION:              'Generic Description',
+  SPEC_DUMP_DESCRIPTION:            'Specification-Only Description',
+  SUPPLIER_DESCRIPTION:             'Supplier-Style Description',
+  REPETITIVE_GENERIC_DESCRIPTION:   'Repetitive / Template Description',
+  VARIANT_PRICE_GAP:                'Variant Price Gap',
+  CATALOG_INCONSISTENCY:            'Catalog Price Inconsistency',
+  HIGH_PERFORMANCE_LOW_QUALITY:     'Top Seller Missing Visual Trust',
+  DEAD_INVENTORY:                   'Dead Inventory',
+  UNIFORM_INVENTORY:                'Uniform Inventory (Dropship Signal)',
+  UNREALISTIC_INVENTORY:            'Unrealistic Inventory',
+  GHOST_LISTING:                    'Ghost Listing (No Collection)',
+  HIGH_FRAGMENTATION:               'Catalog Fragmentation (Flea Market Risk)',
+  COLLECTION_PRICE_OUTLIER:         'Collection Price Outlier',
+  INCONSISTENT_PRICE_POSITIONING:   'Inconsistent Price Positioning',
+  DUPLICATE_IMAGES:                 'Duplicate Images',
+  LIMITED_IMAGE_DIVERSITY:          'Limited Image Diversity',
+  LOW_QUALITY_IMAGE:                'Low Quality Images',
+  BELOW_RECOMMENDED_RESOLUTION:     'Below Recommended Image Resolution',
+  POOR_PRESENTATION:                'Poor Product Presentation',
+  INCONSISTENT_PRIMARY_IMAGE:       'Inconsistent Primary Image',
+  INCONSISTENT_STORE_VISUALS:       'Inconsistent Store Visuals',
+  MISSING_SIZE_GUIDE:               'Missing Size Guide',
+  MISSING_PRODUCT_SPECIFICATION:    'Missing Product Specifications',
+  INCOMPLETE_ORGANIZATION:          'Incomplete Product Organization',
+  MISSING_RECOMMENDED_METAFIELDS:   'Missing Recommended Attributes',
+  DELIVERY_RISK_CRITICAL:           'Critical Delivery Risk',
+  DELIVERY_RISK_HIGH:               'High Delivery Risk',
+  DELIVERY_RISK_MEDIUM:             'Moderate Delivery Risk',
+  DELIVERY_RISK_LOW:                'Low Delivery Risk',
+  LONG_DELIVERY_NO_COMM:            'Long Delivery Without Clear Communication',
+  CATALOG_DUMP_RISK:                'Catalog Dump Risk',
+};
+
+// ── Commercial impact bucket classification ───────────────────────────────────
+// Groups each issue type by its primary commercial impact category.
+const IMPACT_BUCKETS = {
+  // Trust Blockers — things that make customers not trust the store
+  TRUST_BLOCKER: [
+    'NO_PRODUCT_IMAGES', 'INVALID_PRODUCT_TITLE', 'PRICING_ERROR', 'MISSING_DESCRIPTION',
+    'SUPPLIER_DESCRIPTION', 'HIGH_PERFORMANCE_LOW_QUALITY', 'INCONSISTENT_PRIMARY_IMAGE',
+    'CATALOG_DUMP_RISK', 'GHOST_LISTING', 'ABSOLUTE_PRICING_ANOMALY',
+  ],
+  // Conversion Blockers — things that stop customers from buying
+  CONVERSION_BLOCKER: [
+    'WEAK_DESCRIPTION', 'GENERIC_DESCRIPTION', 'SPEC_DUMP_DESCRIPTION', 'REPETITIVE_GENERIC_DESCRIPTION',
+    'LOW_IMAGE_COUNT', 'MISSING_SIZE_GUIDE', 'MISSING_PRODUCT_SPECIFICATION',
+    'WEAK_PRODUCT_TITLE', 'SERIAL_PRODUCT_TITLE', 'KEYWORD_STUFFED_TITLE',
+  ],
+  // Paid Traffic Risks — things that reduce ROAS when running ads
+  PAID_TRAFFIC_RISK: [
+    'LOW_QUALITY_IMAGE', 'BELOW_RECOMMENDED_RESOLUTION', 'POOR_PRESENTATION',
+    'VARIANT_PRICE_GAP', 'COLLECTION_PRICE_OUTLIER', 'INCONSISTENT_PRICE_POSITIONING',
+    'CATALOG_INCONSISTENCY', 'DELIVERY_RISK_CRITICAL', 'DELIVERY_RISK_HIGH',
+  ],
+  // Fulfillment & Delivery — shipping and trust risks
+  FULFILLMENT_RISK: [
+    'DELIVERY_RISK_MEDIUM', 'DELIVERY_RISK_LOW', 'LONG_DELIVERY_NO_COMM',
+    'UNIFORM_INVENTORY', 'UNREALISTIC_INVENTORY', 'DEAD_INVENTORY',
+  ],
+  // Catalog Organization — metadata and structure issues
+  CATALOG_ORGANIZATION: [
+    'INCOMPLETE_ORGANIZATION', 'MISSING_RECOMMENDED_METAFIELDS', 'HIGH_FRAGMENTATION',
+  ],
+  // Visual Presentation — image quality and consistency
+  VISUAL_PRESENTATION: [
+    'EXCESSIVE_IMAGE_COUNT', 'DUPLICATE_IMAGES', 'LIMITED_IMAGE_DIVERSITY',
+    'INCONSISTENT_STORE_VISUALS',
+  ],
+};
+
+function getImpactBucket(issueType) {
+  for (const [bucket, types] of Object.entries(IMPACT_BUCKETS)) {
+    if (types.includes(issueType)) return bucket;
+  }
+  return 'CATALOG_ORGANIZATION'; // fallback
+}
 
 // Health check
 router.get('/health', (req, res) => {
@@ -991,9 +1082,10 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
 
         return {
           id: issueGroup.id,
-          type: issueGroup.type.replace(/_/g, ' '),
+          type: DISPLAY_NAMES[issueGroup.type] || issueGroup.type.replace(/_/g, ' '),
           rawType: issueGroup.type,
           severity: issueGroup.severity,
+          impactBucket: getImpactBucket(issueGroup.type),
           recommendation,
           evidence,
           affectedCount: items.length,
@@ -1158,6 +1250,89 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
         : 'Immediate action required. Stop all paid traffic to prevent budget waste due to catalog quality issues.';
     }
 
+    // ── Store Readiness Narrative ─────────────────────────────────────────────
+    // A calm, merchant-focused narrative that frames the overall situation
+    // before showing the detailed issue list.
+    let storeReadinessNarrative = null;
+    if (latestAudit && issuesList.length > 0) {
+      const criticalOrHighCount = issuesList.filter(i => ['CRITICAL', 'HIGH'].includes(i.severity?.toUpperCase())).length;
+      const totalAffectedProducts = new Set(issuesList.flatMap(i => i.items?.map(p => p.shopifyId) || [])).size;
+      
+      if (mainScore >= 85) {
+        storeReadinessNarrative = `Your store is in good shape. A small number of issues have been flagged for your review, but overall your catalog meets the readiness standards for scaling ad spend. ScaleGuard has prioritized any remaining actions for you below.`;
+      } else if (mainScore >= 70) {
+        storeReadinessNarrative = `Your store has several trust and conversion opportunities that are worth addressing before increasing ad spend. The issues are fixable, and ScaleGuard has prioritized the highest-impact actions first. Resolving the ${criticalOrHighCount} critical and high-priority issues will make the biggest difference to your conversion rate and ad performance.`;
+      } else if (mainScore >= 45) {
+        storeReadinessNarrative = `Your store has a number of trust and conversion risks that should be reviewed before increasing ad spend. These issues are fixable — ScaleGuard has identified the highest-priority actions first. Approximately ${totalAffectedProducts} products are affected by at least one issue. Focus on the critical and high-priority items to improve your readiness score and ad performance.`;
+      } else {
+        storeReadinessNarrative = `Your store currently has significant trust and conversion risks that are likely to result in poor ad performance if left unaddressed. ScaleGuard has identified the most critical issues and prioritised them for you. This does not mean your store is beyond recovery — it means there is clear work to do before scaling ad spend. Work through the priority fixes below to improve your readiness score.`;
+      }
+    } else if (latestAudit && issuesList.length === 0) {
+      storeReadinessNarrative = `Excellent — no significant issues detected in your catalog. Your store meets the readiness standards for scaling ad spend. Continue monitoring with regular audits to maintain this standard as you grow.`;
+    }
+
+    // ── Impact Bucket Summary ─────────────────────────────────────────────────
+    // Groups issues by commercial impact for the bucket summary section.
+    let impactBucketSummary = null;
+    if (latestAudit && issuesList.length > 0) {
+      const bucketLabels = {
+        TRUST_BLOCKER: { label: 'Trust Blockers', icon: '🔴', description: 'Issues that make customers question the legitimacy or quality of your store.' },
+        CONVERSION_BLOCKER: { label: 'Conversion Blockers', icon: '🟠', description: 'Issues that prevent customers from feeling confident enough to complete a purchase.' },
+        PAID_TRAFFIC_RISK: { label: 'Paid Traffic Risks', icon: '🟡', description: 'Issues that reduce your Return on Ad Spend and waste paid traffic budget.' },
+        FULFILLMENT_RISK: { label: 'Fulfillment & Delivery', icon: '📦', description: 'Shipping timeline risks, poor communication, and inventory trust signals.' },
+        CATALOG_ORGANIZATION: { label: 'Catalog Organization', icon: '🔵', description: 'Missing metadata, tags, and organizational structure that affects discoverability.' },
+        VISUAL_PRESENTATION: { label: 'Visual Presentation', icon: '🟣', description: 'Image quality, consistency, and diversity issues affecting store aesthetics.' },
+      };
+
+      const bucketCounts = {};
+      for (const issue of issuesList) {
+        const bucket = issue.impactBucket || 'CATALOG_ORGANIZATION';
+        if (!bucketCounts[bucket]) {
+          bucketCounts[bucket] = { issueCount: 0, affectedProducts: new Set(), highestSeverity: 'LOW' };
+        }
+        bucketCounts[bucket].issueCount++;
+        (issue.items || []).forEach(p => bucketCounts[bucket].affectedProducts.add(p.shopifyId));
+        const SEVERITY_RANK = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
+        if ((SEVERITY_RANK[issue.severity] ?? 4) < (SEVERITY_RANK[bucketCounts[bucket].highestSeverity] ?? 4)) {
+          bucketCounts[bucket].highestSeverity = issue.severity;
+        }
+      }
+
+      impactBucketSummary = Object.entries(bucketCounts)
+        .map(([bucket, data]) => ({
+          bucket,
+          label: bucketLabels[bucket]?.label || bucket,
+          icon: bucketLabels[bucket]?.icon || '⚫',
+          description: bucketLabels[bucket]?.description || '',
+          issueCount: data.issueCount,
+          affectedProductCount: data.affectedProducts.size,
+          highestSeverity: data.highestSeverity,
+        }))
+        .sort((a, b) => {
+          const SEVERITY_RANK = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
+          return (SEVERITY_RANK[a.highestSeverity] ?? 4) - (SEVERITY_RANK[b.highestSeverity] ?? 4);
+        });
+    }
+
+    // ── Delivery Advisory (Persistent) ────────────────────────────────────────
+    // Even if the merchant has overridden DELIVERY_RISK_CRITICAL, we still
+    // show a persistent advisory to remind them of the risk.
+    let deliveryAdvisory = null;
+    if (latestAudit) {
+      const allIssues = latestAudit.issues || [];
+      const hasCriticalDelivery = allIssues.some(i => i.type === 'DELIVERY_RISK_CRITICAL');
+      const isDeliveryRiskOverridden = ignoredRuleTypes.has('DELIVERY_RISK_CRITICAL');
+      
+      if (hasCriticalDelivery && isDeliveryRiskOverridden) {
+        deliveryAdvisory = {
+          type: 'DELIVERY_RISK_ADVISORY',
+          title: 'Delivery Risk Advisory (Acknowledged)',
+          message: 'Long delivery times are often associated with low-trust dropshipping experiences, especially when products appear generic or supplier-sourced. If delivery cannot be improved, make the shipping timeline very clear before purchase to reduce refunds, chargebacks and customer complaints.',
+          isAcknowledged: true,
+        };
+      }
+    }
+
     // Fetch latest manual or scheduled sync/audit jobs to get sync state
     const latestJob = await prisma.job.findFirst({
       where: {
@@ -1239,6 +1414,9 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
       subscription: subscription || null,
       verdict: latestAudit ? verdict : 'Waiting for Sync',
       storeRecommendation: latestAudit ? storeRecommendation : 'Initial audit required to determine readiness.',
+      storeReadinessNarrative: storeReadinessNarrative,
+      impactBucketSummary: impactBucketSummary,
+      deliveryAdvisory: deliveryAdvisory,
       isDataSufficient,
       dataIssues,
       scores: latestAudit ? scores : null,
@@ -1580,7 +1758,13 @@ router.post('/overrides', authenticateFlexible, async (req, res) => {
       return res.status(400).json({ error: 'ruleType is required' });
     }
 
-    const ALLOWED_OVERRIDES = ['UNREALISTIC_INVENTORY', 'UNIFORM_INVENTORY'];
+    const ALLOWED_OVERRIDES = [
+      'UNREALISTIC_INVENTORY',
+      'UNIFORM_INVENTORY',
+      'DELIVERY_RISK_CRITICAL',   // Merchants can acknowledge as intentional (dropshipping / made-to-order)
+      'LONG_DELIVERY_NO_COMM',    // Closely related to DELIVERY_RISK_CRITICAL
+    ];
+
     if (!ALLOWED_OVERRIDES.includes(ruleType)) {
       return res.status(403).json({ error: 'This rule type cannot be overridden.' });
     }
