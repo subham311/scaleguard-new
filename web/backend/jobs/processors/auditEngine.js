@@ -1156,7 +1156,7 @@ function isSupplierDescription(html) {
   return phraseMatches >= 1;
 }
 
-async function calculateDescriptionQualityScore(html, title, lang = 'en') {
+async function calculateDescriptionQualityScore(html, title, lang = 'en', options = {}) {
   if (!html) return 0;
   const text = html.replace(/<[^>]*>?/gm, '').trim();
   const wordCount = text.split(/\s+/).filter(Boolean).length;
@@ -1243,12 +1243,18 @@ async function calculateDescriptionQualityScore(html, title, lang = 'en') {
 
   // AI Fallback Strategy (Section 1.2 & 7.1)
   // To avoid unnecessary cost, we only call OpenAI for borderline heuristic scores (40 to 65).
-  if (finalHeuristicScore >= 40 && finalHeuristicScore <= 65) {
+  // AI is disabled during free trials to prevent unnecessary API cost until the store converts.
+  // The `isTrial` flag is injected via the options parameter from processAuditRun.
+  const aiDisabled = options?.isTrial === true;
+  if (!aiDisabled && finalHeuristicScore >= 40 && finalHeuristicScore <= 65) {
     const aiResult = await evaluateDescriptionQualityWithAI(title, html);
     if (aiResult && typeof aiResult.score === 'number') {
       console.log(`🤖 [OpenAI Fallback] Overrode borderline heuristic score ${finalHeuristicScore} with AI score ${aiResult.score} for "${title}".`);
       return aiResult.score;
     }
+  }
+  if (aiDisabled && finalHeuristicScore >= 40 && finalHeuristicScore <= 65) {
+    // Silently skip AI during trial — heuristic score is used as-is
   }
   
   return finalHeuristicScore;
@@ -1422,10 +1428,28 @@ export async function processAuditRun(jobData) {
     }
     const plan = shop.subscription?.pricingPlan || fallbackPlan;
 
+    // ── Trial-Safe Limits ────────────────────────────────────────────────────
+    // During a free trial, reduce the product scan cap to control infrastructure
+    // and AI cost before the merchant becomes a paying subscriber.
+    const trialEndsAt = shop.subscription?.trialEndsAt;
+    const isTrial = trialEndsAt ? new Date(trialEndsAt) > new Date() : false;
+
+    // Trial product caps per plan (reduced vs full paid limits)
+    const TRIAL_PRODUCT_CAPS = { LIGHT: 20, GROWTH: 50, PRO: 100 };
+    const planName = (shop.subscription?.plan || 'LIGHT').toUpperCase();
+    const trialCap = TRIAL_PRODUCT_CAPS[planName] || 20;
+    const effectiveProductLimit = isTrial
+      ? Math.min(plan.maxProducts, trialCap)
+      : plan.maxProducts;
+
+    if (isTrial) {
+      console.log(`🔒 [Trial-Safe] Shop ${shopId} is in trial — capping product scan at ${effectiveProductLimit} (plan limit: ${plan.maxProducts})`);
+    }
+
     const products = await prisma.product.findMany({
       where: { shopId },
       include: { variants: true, performance: true },
-      take: plan.maxProducts,
+      take: effectiveProductLimit,
     });
 
     const dbOverrides = await prisma.merchantOverride.findMany({
@@ -1954,7 +1978,7 @@ export async function processAuditRun(jobData) {
       issues.push(...fulfillmentIssues);
 
       // ── Calculate and Update Product Scores (Section 1 & 3) ───────────────
-      const descQualityScore = await calculateDescriptionQualityScore(product.description, product.title, productLang);
+      const descQualityScore = await calculateDescriptionQualityScore(product.description, product.title, productLang, { isTrial });
       
       // 1. Title Quality (max 20 points)
       const isWeakTitleFlag = isWeakTitle(product.title, productLang);

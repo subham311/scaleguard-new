@@ -70,6 +70,16 @@ async function scheduleDataSyncs(targetFrequency) {
         // Default to WEEKLY if no plan is specified
         const frequency = plan?.scanFrequency || 'WEEKLY';
 
+        // ── Trial-Safe Limit: trial shops always use WEEKLY (daily/manual scanning) ──
+        // During a free trial, skip heavy recurring scans (FASTER = every 3h, CONTINUOUS = daily).
+        // Trial shops can still run manual syncs from the dashboard at any time.
+        const trialEndsAt = shop.subscription?.trialEndsAt;
+        const isTrial = trialEndsAt ? new Date(trialEndsAt) > new Date() : false;
+        if (isTrial && frequency !== 'WEEKLY') {
+          // Silently skip this shop — trial users are restricted to WEEKLY/manual scans
+          continue;
+        }
+
         if (frequency === targetFrequency) {
           // Check if there is already a pending sync job to prevent duplicates
           const existingJob = await prisma.job.findFirst({

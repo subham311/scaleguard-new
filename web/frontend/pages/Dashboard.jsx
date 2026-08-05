@@ -469,6 +469,79 @@ export default function Dashboard() {
           </div>
         )}
 
+        {/* ── Trial-Safe Limits Banner ── */}
+        {data?.trialInfo?.isTrial && (
+          <div style={{
+            background: "#FFFBF0",
+            border: "1px solid #FFC40040",
+            borderRadius: radius.md,
+            padding: "14px 20px",
+            marginBottom: "20px",
+            boxShadow: shadow.card,
+            display: "flex",
+            alignItems: "flex-start",
+            gap: "12px",
+          }}>
+            <span style={{ fontSize: "18px", flexShrink: 0, marginTop: "1px" }}>🔒</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: "13px", fontWeight: 700, color: "#7A5400", marginBottom: "4px" }}>
+                Free Trial Active
+                {data.trialInfo.daysRemaining > 0 && (
+                  <span style={{
+                    marginLeft: "10px",
+                    fontSize: "11px",
+                    fontWeight: 600,
+                    color: "#995200",
+                    background: "#FFF0C0",
+                    border: "1px solid #FFC40040",
+                    borderRadius: "20px",
+                    padding: "2px 10px",
+                  }}>
+                    {data.trialInfo.daysRemaining} day{data.trialInfo.daysRemaining !== 1 ? "s" : ""} remaining
+                  </span>
+                )}
+              </div>
+              <div style={{ fontSize: "13px", color: "#7A5400", lineHeight: "1.6" }}>
+                Your store audit is running with trial-safe limits. ScaleGuard will still show your main trust, catalog and conversion risks.{" "}
+                <span style={{ fontWeight: 600 }}>
+                  Paid plans unlock full product coverage, deeper monitoring and advanced commercial intelligence.
+                </span>
+              </div>
+              {data.trialInfo.trialProductCap && (
+                <div style={{
+                  marginTop: "8px",
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: "16px",
+                  fontSize: "12px",
+                  color: "#995200",
+                }}>
+                  <span>📦 Products monitored: <strong>up to {data.trialInfo.trialProductCap}</strong></span>
+                  <span>🔁 Scan frequency: <strong>{data.trialInfo.scanFrequency}</strong></span>
+                  <span>🤖 AI intelligence: <strong>Enabled on paid plan</strong></span>
+                </div>
+              )}
+            </div>
+            <button
+              onClick={() => navigate("/")}
+              style={{
+                flexShrink: 0,
+                fontSize: "12px",
+                fontWeight: 700,
+                color: "#5C6AC4",
+                background: "transparent",
+                border: "1px solid #5C6AC430",
+                borderRadius: "8px",
+                padding: "6px 14px",
+                cursor: "pointer",
+                whiteSpace: "nowrap",
+              }}
+            >
+              Upgrade Plan
+            </button>
+          </div>
+        )}
+
         {/* ── Active Sync Status Banner ── */}
         {(latestJobStatus === "PENDING" || latestJobStatus === "PROCESSING") && (
           <div style={{

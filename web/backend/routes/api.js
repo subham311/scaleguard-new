@@ -7,6 +7,11 @@ import { sendSupportEmail } from '../services/emailService.js';
 const router = express.Router();
 const REVIEW_BYPASS_SHOPS = new Set(['daf2cb-2.myshopify.com']);
 
+// Domains that have been manually approved by ScaleGuard admin for extended trial access.
+// These shops bypass the trial product cap and scan frequency restrictions.
+// To approve a domain, add it to this set (e.g. 'example.myshopify.com').
+const TRIAL_EXTENDED_DOMAINS = new Set([]);
+
 function isReviewBypassShop(shopDomain) {
   if (!shopDomain) return false;
   return REVIEW_BYPASS_SHOPS.has(String(shopDomain).toLowerCase());
@@ -485,6 +490,37 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
 
     const plan = subscription?.pricingPlan;
 
+    // ── Trial-Safe Limits ───────────────────────────────────────────────────
+    const trialEndsAt = subscription?.trialEndsAt;
+    const isTrial = trialEndsAt ? new Date(trialEndsAt) > new Date() : false;
+    const isExtendedDomain = TRIAL_EXTENDED_DOMAINS.has(shop.shopDomain?.toLowerCase());
+
+    // Trial product caps per plan (reduced vs full paid limits)
+    const TRIAL_PRODUCT_CAPS = { LIGHT: 20, GROWTH: 50, PRO: 100 };
+    const dashPlanName = (subscription?.plan || 'LIGHT').toUpperCase();
+    const dashTrialCap = TRIAL_PRODUCT_CAPS[dashPlanName] || 20;
+    const fullProductLimit = plan?.maxProducts || 50;
+    const effectiveDashProductLimit = (isTrial && !isExtendedDomain)
+      ? Math.min(fullProductLimit, dashTrialCap)
+      : fullProductLimit;
+
+    // Days remaining in trial (for dashboard display)
+    const trialDaysRemaining = isTrial
+      ? Math.max(0, Math.ceil((new Date(trialEndsAt) - new Date()) / (1000 * 60 * 60 * 24)))
+      : 0;
+
+    const trialInfo = isTrial
+      ? {
+          isTrial: true,
+          trialEndsAt,
+          daysRemaining: trialDaysRemaining,
+          trialProductCap: isExtendedDomain ? fullProductLimit : dashTrialCap,
+          isExtendedAccess: isExtendedDomain,
+          aiEnabled: false,
+          scanFrequency: 'Daily / Manual (Trial Safe)',
+        }
+      : null;
+
     // 1. Get the latest completed AuditRun
     const latestAudit = await prisma.auditRun.findFirst({
       where: { shopId: shop.id, status: 'COMPLETED' },
@@ -494,11 +530,11 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
       orderBy: { completedAt: 'desc' },
     });
 
-    // 2. Get products for breakdown (limited by plan)
+    // 2. Get products for breakdown (limited by plan — with trial cap applied)
     const products = await prisma.product.findMany({
       where: { shopId: shop.id },
       include: { variants: true },
-      take: plan?.maxProducts || 50,
+      take: effectiveDashProductLimit,
     });
 
     let scores = {
@@ -1412,6 +1448,7 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
         totalProductsCount: shop.totalProductsCount || 0,
       },
       subscription: subscription || null,
+      trialInfo,
       verdict: latestAudit ? verdict : 'Waiting for Sync',
       storeRecommendation: latestAudit ? storeRecommendation : 'Initial audit required to determine readiness.',
       storeReadinessNarrative: storeReadinessNarrative,
