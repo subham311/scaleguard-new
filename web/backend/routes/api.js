@@ -7,10 +7,16 @@ import { sendSupportEmail } from '../services/emailService.js';
 const router = express.Router();
 const REVIEW_BYPASS_SHOPS = new Set(['daf2cb-2.myshopify.com']);
 
-// Domains that have been manually approved by ScaleGuard admin for extended trial access.
-// These shops bypass the trial product cap and scan frequency restrictions.
-// To approve a domain, add it to this set (e.g. 'example.myshopify.com').
-const TRIAL_EXTENDED_DOMAINS = new Set([]);
+// Helper to check if a domain has extended trial approval (via .env or hardcoded list)
+function isExtendedTrialDomain(shopDomain) {
+  if (!shopDomain) return false;
+  const domain = String(shopDomain).toLowerCase();
+  const envDomains = (process.env.TRIAL_EXTENDED_DOMAINS || '')
+    .split(',')
+    .map(d => d.trim().toLowerCase())
+    .filter(Boolean);
+  return envDomains.includes(domain);
+}
 
 function isReviewBypassShop(shopDomain) {
   if (!shopDomain) return false;
@@ -493,7 +499,7 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
     // ── Trial-Safe Limits ───────────────────────────────────────────────────
     const trialEndsAt = subscription?.trialEndsAt;
     const isTrial = trialEndsAt ? new Date(trialEndsAt) > new Date() : false;
-    const isExtendedDomain = TRIAL_EXTENDED_DOMAINS.has(shop.shopDomain?.toLowerCase());
+    const isExtendedDomain = isExtendedTrialDomain(shop.shopDomain);
 
     // Trial product caps per plan (reduced vs full paid limits)
     const TRIAL_PRODUCT_CAPS = { LIGHT: 20, GROWTH: 50, PRO: 100 };
