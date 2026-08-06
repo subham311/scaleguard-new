@@ -1423,7 +1423,7 @@ export async function processAuditRun(jobData) {
       } else if (planName === 'GROWTH') {
         fallbackPlan.maxProducts = 75; fallbackPlan.imagesPerProduct = 3;
       } else if (planName === 'PRO') {
-        fallbackPlan.maxProducts = 200; fallbackPlan.imagesPerProduct = 4;
+        fallbackPlan.maxProducts = 200; fallbackPlan.imagesPerProduct = 5;
       }
     }
     const plan = shop.subscription?.pricingPlan || fallbackPlan;
@@ -2212,175 +2212,132 @@ export async function processAuditRun(jobData) {
       ['UNIFORM_INVENTORY', 'GHOST_LISTING', 'UNREALISTIC_INVENTORY'].includes(i.type)
     );
 
-    const scores = {
-      productDataQuality: Math.max(0,
-        100
-        - (pricingIssues.length * 15)
-        - (titleIssues.filter(i => i.type === 'INVALID_PRODUCT_TITLE').length * 15)
-        - (titleIssues.filter(i => i.type === 'WEAK_PRODUCT_TITLE').length * 5)
-        - (titleIssues.filter(i => i.type === 'SERIAL_PRODUCT_TITLE').length * 8)
-        - (titleIssues.filter(i => i.type === 'KEYWORD_STUFFED_TITLE').length * 4)
-        - (descIssues.filter(i => i.type === 'MISSING_DESCRIPTION').length * 10)
-        - (descIssues.filter(i => i.type === 'WEAK_DESCRIPTION').length * 5)
-        - (descIssues.filter(i => i.type === 'GENERIC_DESCRIPTION').length * 3)
-        - (descIssues.filter(i => i.type === 'SPEC_DUMP_DESCRIPTION').length * 15)
-        - (descIssues.filter(i => i.type === 'SUPPLIER_DESCRIPTION').length * 10)
-        - (descIssues.filter(i => i.type === 'REPETITIVE_GENERIC_DESCRIPTION').length * 8)
-        - (descIssues.filter(i => i.type === 'MISSING_SIZE_GUIDE').length * 10)
-        - (descIssues.filter(i => i.type === 'MISSING_PRODUCT_SPECIFICATION').length * 5)
-      ),
-      visualTrust: Math.max(0,
-        100
-        - (noImageIssues.length * 30)
-        - (allImageIssues.filter(i => i.type === 'LOW_IMAGE_COUNT').length * 15)
-        - (allImageIssues.filter(i => i.type === 'EXCESSIVE_IMAGE_COUNT').length * 5)
-        - (filteredIssues.filter(i => i.type === 'DUPLICATE_IMAGES').length * 10)
-        - (filteredIssues.filter(i => i.type === 'LIMITED_IMAGE_DIVERSITY').length * 5)
-        - (filteredIssues.filter(i => i.type === 'LOW_QUALITY_IMAGE').length * 15)
-        - (filteredIssues.filter(i => i.type === 'BELOW_RECOMMENDED_RESOLUTION').length * 8)
-        - (filteredIssues.filter(i => i.type === 'POOR_PRESENTATION').length * 5)
-        - (filteredIssues.filter(i => i.type === 'INCONSISTENT_PRIMARY_IMAGE').length * 20)
-        - (filteredIssues.filter(i => i.type === 'INCONSISTENT_STORE_VISUALS').length * 5)
-      ),
-      catalogConsistency: Math.max(0, 100 
-        - (allConsistencyIssues.filter(i => !['INCOMPLETE_ORGANIZATION', 'MISSING_RECOMMENDED_METAFIELDS'].includes(i.type)).length * 20)
-        - (inventoryIssues.length * 15)
-        - (allConsistencyIssues.filter(i => i.type === 'INCOMPLETE_ORGANIZATION').length * 2)
-        - (allConsistencyIssues.filter(i => i.type === 'MISSING_RECOMMENDED_METAFIELDS').length * 2)
-      ),
-      fulfillmentTrust: (() => {
-        const fIssues = filteredIssues.filter(i => ['DELIVERY_RISK_LOW', 'DELIVERY_RISK_MEDIUM', 'DELIVERY_RISK_HIGH', 'DELIVERY_RISK_CRITICAL'].includes(i.type));
-        const longDelNoCommIssues = filteredIssues.filter(i => i.type === 'LONG_DELIVERY_NO_COMM');
-        
-        let dropshipDeductions = 0;
-        let riskDeductions = 0;
-        
-        for (const issue of fIssues) {
-          const model = issue.evidence?.fulfillmentModel;
-          const type = issue.type;
-          
-          if (model === 'OVERSEAS_DROPSHIP') {
-            dropshipDeductions += 5;
-          }
-          
-          if (type === 'DELIVERY_RISK_CRITICAL') {
-            riskDeductions += 12;
-          } else if (type === 'DELIVERY_RISK_HIGH') {
-            riskDeductions += 6;
-          } else if (type === 'DELIVERY_RISK_MEDIUM') {
-            riskDeductions += 3;
-          }
-        }
-        
-        const longDelDeductions = longDelNoCommIssues.length * 8;
-        
-        return Math.max(0, 100 - dropshipDeductions - riskDeductions - longDelDeductions);
-      })(),
-      dropshippingPerception: (() => {
-        let score = 100;
-        
-        const unrealisticInv = filteredIssues.filter(i => i.type === 'UNREALISTIC_INVENTORY');
-        const uniqueUnrealisticProds = new Set();
-        unrealisticInv.forEach(i => {
-          (i.affectedEntities || []).forEach(vid => {
-            const prod = products.find(p => p.variants.some(v => v.shopifyId === vid));
-            if (prod) uniqueUnrealisticProds.add(prod.shopifyId);
-          });
-        });
-        score -= uniqueUnrealisticProds.size * 10;
-        
-        const uniformInv = filteredIssues.filter(i => i.type === 'UNIFORM_INVENTORY');
-        const uniqueUniformProds = new Set(uniformInv.flatMap(i => i.affectedEntities || []));
-        score -= uniqueUniformProds.size * 5;
-        
-        const supplierDesc = filteredIssues.filter(i => i.type === 'SUPPLIER_DESCRIPTION');
-        const uniqueSupplierProds = new Set(supplierDesc.flatMap(i => i.affectedEntities || []));
-        score -= uniqueSupplierProds.size * 15;
-        
-        const specDumpDesc = filteredIssues.filter(i => i.type === 'SPEC_DUMP_DESCRIPTION');
-        const uniqueSpecDumpProds = new Set(specDumpDesc.flatMap(i => i.affectedEntities || []));
-        score -= uniqueSpecDumpProds.size * 10;
-        
-        const lowQualityImg = filteredIssues.filter(i => i.type === 'LOW_QUALITY_IMAGE');
-        const uniqueLowQualityProds = new Set(lowQualityImg.flatMap(i => i.affectedEntities || []));
-        score -= uniqueLowQualityProds.size * 10;
-        
-        const duplicateImg = filteredIssues.filter(i => i.type === 'DUPLICATE_IMAGES');
-        const uniqueDuplicateProds = new Set(duplicateImg.flatMap(i => i.affectedEntities || []));
-        score -= uniqueDuplicateProds.size * 5;
-        
-        // BELOW_RECOMMENDED_RESOLUTION and POOR_PRESENTATION affect dropshipping perception
-        const belowRec = filteredIssues.filter(i => i.type === 'BELOW_RECOMMENDED_RESOLUTION');
-        const uniqueBelowRecProds = new Set(belowRec.flatMap(i => i.affectedEntities || []));
-        score -= uniqueBelowRecProds.size * 3;
+    // Category Scoring (Nuanced, catalog-share proportional)
+    const totalScannedCount = Math.max(1, products.length);
 
-        const poorPres = filteredIssues.filter(i => i.type === 'POOR_PRESENTATION');
-        const uniquePoorPresProds = new Set(poorPres.flatMap(i => i.affectedEntities || []));
-        score -= uniquePoorPresProds.size * 5;
+    const avgProdDescScore = products.length > 0
+      ? products.reduce((sum, p) => sum + (p.descriptionQualityScore || 0), 0) / products.length
+      : 80;
+    const avgProdCompScore = products.length > 0
+      ? products.reduce((sum, p) => sum + (p.completenessScore || 0), 0) / products.length
+      : 80;
+
+    const baseDataQuality = Math.round((avgProdDescScore * 0.6) + (avgProdCompScore * 0.4));
+    const pricingAffectedShare = new Set(pricingIssues.flatMap(i => i.affectedEntities || [])).size / totalScannedCount;
+    const titleAffectedShare = new Set(titleIssues.flatMap(i => i.affectedEntities || [])).size / totalScannedCount;
+    const descAffectedShare = new Set(descIssues.flatMap(i => i.affectedEntities || [])).size / totalScannedCount;
+
+    const dataQualityDeductions = (pricingAffectedShare * 30) + (titleAffectedShare * 20) + (descAffectedShare * 20);
+    const productDataQuality = Math.max(15, Math.min(100, Math.round(baseDataQuality - dataQualityDeductions)));
+
+    const noImgShare = new Set(noImageIssues.flatMap(i => i.affectedEntities || [])).size / totalScannedCount;
+    const lowImgShare = new Set(allImageIssues.filter(i => i.type === 'LOW_IMAGE_COUNT').flatMap(i => i.affectedEntities || [])).size / totalScannedCount;
+    const dupImgShare = new Set(filteredIssues.filter(i => i.type === 'DUPLICATE_IMAGES').flatMap(i => i.affectedEntities || [])).size / totalScannedCount;
+    const lowQualImgShare = new Set(filteredIssues.filter(i => i.type === 'LOW_QUALITY_IMAGE').flatMap(i => i.affectedEntities || [])).size / totalScannedCount;
+    const poorPresShare = new Set(filteredIssues.filter(i => i.type === 'POOR_PRESENTATION').flatMap(i => i.affectedEntities || [])).size / totalScannedCount;
+
+    const visualTrustDeductions = (noImgShare * 50) + (lowImgShare * 25) + (dupImgShare * 20) + (lowQualImgShare * 25) + (poorPresShare * 15);
+    const visualTrust = Math.max(15, Math.min(100, Math.round(100 - visualTrustDeductions)));
+
+    const consistencyAffectedShare = new Set(allConsistencyIssues.flatMap(i => i.affectedEntities || [])).size / totalScannedCount;
+    const inventoryAffectedShare = new Set(inventoryIssues.flatMap(i => i.affectedEntities || [])).size / totalScannedCount;
+
+    let consistencyDeduction = (consistencyAffectedShare * 40) + (inventoryAffectedShare * 30);
+    if (allConsistencyIssues.some(i => i.type === 'HIGH_FRAGMENTATION')) consistencyDeduction += 15;
+
+    const catalogConsistency = Math.max(15, Math.min(100, Math.round(100 - consistencyDeduction)));
+
+    const fulfillmentTrust = (() => {
+      const fIssues = filteredIssues.filter(i => ['DELIVERY_RISK_LOW', 'DELIVERY_RISK_MEDIUM', 'DELIVERY_RISK_HIGH', 'DELIVERY_RISK_CRITICAL'].includes(i.type));
+      const longDelNoCommIssues = filteredIssues.filter(i => i.type === 'LONG_DELIVERY_NO_COMM');
+      
+      let riskDeductionShare = 0;
+      for (const issue of fIssues) {
+        const model = issue.evidence?.fulfillmentModel;
+        const affectedRatio = Math.min(1, (issue.affectedEntities || []).length / totalScannedCount);
         
-        const dropshipDelivery = filteredIssues.filter(i => 
-          ['DELIVERY_RISK_LOW', 'DELIVERY_RISK_MEDIUM', 'DELIVERY_RISK_HIGH', 'DELIVERY_RISK_CRITICAL'].includes(i.type) && 
-          i.evidence?.fulfillmentModel === 'OVERSEAS_DROPSHIP'
-        );
-        const uniqueDropshipDeliveryProds = new Set(dropshipDelivery.flatMap(i => i.affectedEntities || []));
-        score -= uniqueDropshipDeliveryProds.size * 15;
-        
-        const priceConsistency = filteredIssues.filter(i => ['VARIANT_PRICE_GAP', 'CATALOG_INCONSISTENCY'].includes(i.type));
-        const uniquePriceConsistProds = new Set(priceConsistency.flatMap(i => i.affectedEntities || []));
-        score -= uniquePriceConsistProds.size * 10;
-        
-        if (filteredIssues.some(i => i.type === 'HIGH_FRAGMENTATION')) {
-          score -= 20;
+        if (model === 'OVERSEAS_DROPSHIP') {
+          riskDeductionShare += affectedRatio * 20;
         }
-        if (filteredIssues.some(i => ['COLLECTION_PRICE_OUTLIER', 'INCONSISTENT_PRICE_POSITIONING'].includes(i.type))) {
-          score -= 15;
+        
+        if (issue.type === 'DELIVERY_RISK_CRITICAL') {
+          riskDeductionShare += affectedRatio * 35;
+        } else if (issue.type === 'DELIVERY_RISK_HIGH') {
+          riskDeductionShare += affectedRatio * 20;
+        } else if (issue.type === 'DELIVERY_RISK_MEDIUM') {
+          riskDeductionShare += affectedRatio * 10;
         }
-        
-        return Math.max(0, Math.min(100, score));
-      })(),
-      catalogMaintenance: (() => {
-        let score = 100;
-        
-        const dIssues = filteredIssues.filter(i => ['WEAK_DESCRIPTION', 'MISSING_DESCRIPTION', 'GENERIC_DESCRIPTION', 'REPETITIVE_GENERIC_DESCRIPTION'].includes(i.type));
-        const uniqueDescProds = new Set(dIssues.flatMap(i => i.affectedEntities || []));
-        score -= uniqueDescProds.size * 5;
-        
-        const tIssues = filteredIssues.filter(i => ['WEAK_PRODUCT_TITLE', 'INVALID_PRODUCT_TITLE', 'SERIAL_PRODUCT_TITLE', 'KEYWORD_STUFFED_TITLE'].includes(i.type));
-        const uniqueTitleProds = new Set(tIssues.flatMap(i => i.affectedEntities || []));
-        score -= uniqueTitleProds.size * 5;
-        
-        const ghostListings = filteredIssues.filter(i => i.type === 'GHOST_LISTING');
-        const uniqueGhostProds = new Set(ghostListings.flatMap(i => i.affectedEntities || []));
-        score -= uniqueGhostProds.size * 15;
-        
-        const imageIssues = filteredIssues.filter(i => ['NO_PRODUCT_IMAGES', 'LOW_IMAGE_COUNT', 'BELOW_RECOMMENDED_RESOLUTION', 'POOR_PRESENTATION'].includes(i.type));
-        const uniqueImageProds = new Set(imageIssues.flatMap(i => i.affectedEntities || []));
-        score -= uniqueImageProds.size * 8;
-        
-        const supplierIssues = filteredIssues.filter(i => ['SUPPLIER_DESCRIPTION', 'SPEC_DUMP_DESCRIPTION'].includes(i.type));
-        const uniqueSupplierProds = new Set(supplierIssues.flatMap(i => i.affectedEntities || []));
-        score -= uniqueSupplierProds.size * 10;
-        
-        const inventoryIssues = filteredIssues.filter(i => i.type === 'UNIFORM_INVENTORY');
-        const uniqueInvProds = new Set(inventoryIssues.flatMap(i => i.affectedEntities || []));
-        score -= uniqueInvProds.size * 10;
-        
-        const unrealisticInv = filteredIssues.filter(i => i.type === 'UNREALISTIC_INVENTORY');
-        const uniqueUnrealisticProds = new Set();
-        unrealisticInv.forEach(i => {
-          (i.affectedEntities || []).forEach(vid => {
-            const prod = products.find(p => p.variants.some(v => v.shopifyId === vid));
-            if (prod) uniqueUnrealisticProds.add(prod.shopifyId);
-          });
+      }
+      
+      const longDelShare = new Set(longDelNoCommIssues.flatMap(i => i.affectedEntities || [])).size / totalScannedCount;
+      riskDeductionShare += longDelShare * 20;
+      
+      return Math.max(20, Math.min(100, Math.round(100 - riskDeductionShare)));
+    })();
+
+    const dropshippingPerception = (() => {
+      let deduction = 0;
+      
+      const unrealisticInv = filteredIssues.filter(i => i.type === 'UNREALISTIC_INVENTORY');
+      const uniqueUnrealisticProds = new Set();
+      unrealisticInv.forEach(i => {
+        (i.affectedEntities || []).forEach(vid => {
+          const prod = products.find(p => p.variants.some(v => v.shopifyId === vid));
+          if (prod) uniqueUnrealisticProds.add(prod.shopifyId);
         });
-        score -= uniqueUnrealisticProds.size * 10;
-        
-        return Math.max(0, Math.min(100, score));
-      })(),
+      });
+      deduction += (uniqueUnrealisticProds.size / totalScannedCount) * 25;
+      
+      const supplierDesc = filteredIssues.filter(i => i.type === 'SUPPLIER_DESCRIPTION');
+      deduction += (new Set(supplierDesc.flatMap(i => i.affectedEntities || [])).size / totalScannedCount) * 30;
+      
+      const lowQualityImg = filteredIssues.filter(i => i.type === 'LOW_QUALITY_IMAGE');
+      deduction += (new Set(lowQualityImg.flatMap(i => i.affectedEntities || [])).size / totalScannedCount) * 20;
+      
+      const duplicateImg = filteredIssues.filter(i => i.type === 'DUPLICATE_IMAGES');
+      deduction += (new Set(duplicateImg.flatMap(i => i.affectedEntities || [])).size / totalScannedCount) * 15;
+      
+      const dropshipDelivery = filteredIssues.filter(i => 
+        ['DELIVERY_RISK_LOW', 'DELIVERY_RISK_MEDIUM', 'DELIVERY_RISK_HIGH', 'DELIVERY_RISK_CRITICAL'].includes(i.type) && 
+        i.evidence?.fulfillmentModel === 'OVERSEAS_DROPSHIP'
+      );
+      deduction += (new Set(dropshipDelivery.flatMap(i => i.affectedEntities || [])).size / totalScannedCount) * 30;
+      
+      if (filteredIssues.some(i => i.type === 'HIGH_FRAGMENTATION')) deduction += 15;
+      
+      return Math.max(15, Math.min(100, Math.round(100 - deduction)));
+    })();
+
+    const catalogMaintenance = (() => {
+      let deduction = 0;
+      
+      const dIssues = filteredIssues.filter(i => ['WEAK_DESCRIPTION', 'MISSING_DESCRIPTION', 'GENERIC_DESCRIPTION', 'REPETITIVE_GENERIC_DESCRIPTION'].includes(i.type));
+      deduction += (new Set(dIssues.flatMap(i => i.affectedEntities || [])).size / totalScannedCount) * 20;
+      
+      const tIssues = filteredIssues.filter(i => ['WEAK_PRODUCT_TITLE', 'INVALID_PRODUCT_TITLE', 'SERIAL_PRODUCT_TITLE', 'KEYWORD_STUFFED_TITLE'].includes(i.type));
+      deduction += (new Set(tIssues.flatMap(i => i.affectedEntities || [])).size / totalScannedCount) * 20;
+      
+      const ghostListings = filteredIssues.filter(i => i.type === 'GHOST_LISTING');
+      deduction += (new Set(ghostListings.flatMap(i => i.affectedEntities || [])).size / totalScannedCount) * 25;
+      
+      const imageIssues = filteredIssues.filter(i => ['NO_PRODUCT_IMAGES', 'LOW_IMAGE_COUNT', 'BELOW_RECOMMENDED_RESOLUTION', 'POOR_PRESENTATION'].includes(i.type));
+      deduction += (new Set(imageIssues.flatMap(i => i.affectedEntities || [])).size / totalScannedCount) * 20;
+      
+      return Math.max(20, Math.min(100, Math.round(100 - deduction)));
+    })();
+
+    const scores = {
+      productDataQuality,
+      visualTrust,
+      catalogConsistency,
+      fulfillmentTrust,
+      dropshippingPerception,
+      catalogMaintenance,
     };
 
     const baseReadiness = (scores.productDataQuality * 0.4) + (scores.visualTrust * 0.4) + (scores.catalogConsistency * 0.2);
-    let conversionReadiness = Math.round(Math.max(0, baseReadiness - perfRiskIssues.length * 20));
+    const performancePenalty = Math.round((perfRiskIssues.length / totalScannedCount) * 30);
+    let conversionReadiness = Math.round(Math.max(15, baseReadiness - performancePenalty));
     if (criticalIssues.length > 0) conversionReadiness = Math.min(conversionReadiness, 45);
     scores.conversionReadiness = conversionReadiness;
 
@@ -2401,10 +2358,10 @@ export async function processAuditRun(jobData) {
       );
       
       if (filteredIssues.some(i => i.type === 'CATALOG_DUMP_RISK')) {
-        score -= 25;
+        score -= 15;
       }
       
-      return Math.max(0, Math.min(100, score));
+      return Math.max(15, Math.min(100, score));
     })();
 
     // Trust Classification mapping

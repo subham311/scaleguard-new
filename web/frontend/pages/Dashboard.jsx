@@ -11,6 +11,7 @@ import {
   Select,
   Collapsible,
   EmptyState,
+  Tooltip,
 } from "@shopify/polaris";
 import { useAuditData } from "../hooks/useAuditData";
 import { useAppBridge } from "@shopify/app-bridge-react";
@@ -198,7 +199,7 @@ const VERDICT_CONFIG = {
   "Ready to Scale: Proceed with ad spend": { bg: colors.successBg, border: "#00806020", color: colors.success, icon: "✦" },
   "Almost Ready: Fix remaining issues": { bg: colors.infoBg, border: "#1865C220", color: colors.info, icon: "◑" },
   "Not Ready: Do not run ads": { bg: colors.warningBg, border: "#99520020", color: colors.warning, icon: "⚠" },
-  "High Risk: Stop paid traffic": { bg: colors.criticalBg, border: "#AE2E2420", color: colors.critical, icon: "🚫" },
+  "High Risk: Review before scaling paid traffic": { bg: colors.criticalBg, border: "#AE2E2420", color: colors.critical, icon: "🚫" },
   "Waiting for Sync": { bg: "#FFFDF0", border: "#99520020", color: colors.warning, icon: "⟳" },
 };
 
@@ -368,6 +369,7 @@ export default function Dashboard() {
       color: "#5C6AC4",
       icon: "◈",
       explanation: scoreExplanations?.dataQuality?.explanation || null,
+      tooltip: "Evaluates description copy length, structure, benefit orientation, and lack of supplier boilerplate. A product with strong copy can still carry store risk if delivery, pricing, or image issues exist.",
     },
     {
       label: "Visual Trust",
@@ -376,6 +378,7 @@ export default function Dashboard() {
       color: "#00A3BF",
       icon: "◉",
       explanation: scoreExplanations?.visualTrust?.explanation || null,
+      tooltip: "Measures image resolution, gallery volume, diversity, and absence of duplicate or poor-quality visuals.",
     },
     {
       label: "Consistency",
@@ -384,6 +387,7 @@ export default function Dashboard() {
       color: "#00B779",
       icon: "◆",
       explanation: scoreExplanations?.consistency?.explanation || null,
+      tooltip: "Evaluates pricing alignment across variants, inventory reliability, and catalog structural balance.",
     },
     {
       label: "Readiness",
@@ -392,6 +396,7 @@ export default function Dashboard() {
       color: "#637381",
       icon: "◎",
       explanation: scoreExplanations?.readiness?.explanation || null,
+      tooltip: "Commercial scaling readiness metric. Assesses overall conversion confidence before launching or increasing paid traffic spend.",
     },
   ];
 
@@ -759,8 +764,12 @@ export default function Dashboard() {
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "10px" }}>
                     <ScoreRing score={metric.score} color={metric.color} />
                     <div style={{ textAlign: "center" }}>
-                      <div style={{ fontSize: "14px", fontWeight: 700, color: colors.textPrimary }}>{metric.label}</div>
-                      <div style={{ fontSize: "10px", color: colors.accent, fontWeight: 600, marginTop: "2px", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                      <Tooltip content={metric.tooltip} dismissOnMouseOut>
+                        <span style={{ fontSize: "14px", fontWeight: 700, color: colors.textPrimary, cursor: "help", borderBottom: `1px dashed ${colors.textMuted}` }}>
+                          {metric.label} ⓘ
+                        </span>
+                      </Tooltip>
+                      <div style={{ fontSize: "10px", color: colors.accent, fontWeight: 600, marginTop: "4px", textTransform: "uppercase", letterSpacing: "0.04em" }}>
                         {metric.measures}
                       </div>
                       {metric.explanation ? (
@@ -816,8 +825,12 @@ export default function Dashboard() {
                     <ScoreRing score={scores.trustScore} color={colors.accent} size={54} />
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: "13px", fontWeight: 700, color: colors.textPrimary, lineHeight: "1.3" }}>Trust Score</div>
-                    <div style={{ fontSize: "11px", color: colors.textSecondary, marginTop: "2px", lineHeight: "1.3" }}>Weighted trust index</div>
+                    <Tooltip content="Composite index combining copy quality, visual presentation, shipping transparency, pricing integrity, and brand credibility." dismissOnMouseOut>
+                      <div style={{ fontSize: "13px", fontWeight: 700, color: colors.textPrimary, lineHeight: "1.3", cursor: "help", borderBottom: `1px dashed ${colors.textMuted}`, display: "inline-block" }}>
+                        Trust Score ⓘ
+                      </div>
+                    </Tooltip>
+                    <div style={{ fontSize: "11px", color: colors.textSecondary, marginTop: "4px", lineHeight: "1.3" }}>Weighted trust index</div>
                   </div>
                 </div>
                 <div style={{ padding: "16px 14px", background: colors.surfaceAlt, borderRadius: radius.md, border: `1px solid ${colors.border}`, display: "flex", alignItems: "center", gap: "12px", minWidth: 0 }}>
@@ -825,8 +838,12 @@ export default function Dashboard() {
                     <ScoreRing score={scores.fulfillmentTrust} color="#00A3BF" size={54} />
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: "13px", fontWeight: 700, color: colors.textPrimary, lineHeight: "1.3" }}>Fulfillment Trust</div>
-                    <div style={{ fontSize: "11px", color: colors.textSecondary, marginTop: "2px", lineHeight: "1.3" }}>Delivery timeline & risk</div>
+                    <Tooltip content="Assesses shipping speed, delivery transparency, supplier communication, and logistics risk." dismissOnMouseOut>
+                      <div style={{ fontSize: "13px", fontWeight: 700, color: colors.textPrimary, lineHeight: "1.3", cursor: "help", borderBottom: `1px dashed ${colors.textMuted}`, display: "inline-block" }}>
+                        Fulfillment Trust ⓘ
+                      </div>
+                    </Tooltip>
+                    <div style={{ fontSize: "11px", color: colors.textSecondary, marginTop: "4px", lineHeight: "1.3" }}>Delivery timeline & risk</div>
                   </div>
                 </div>
                 <div style={{ padding: "16px 14px", background: colors.surfaceAlt, borderRadius: radius.md, border: `1px solid ${colors.border}`, display: "flex", alignItems: "center", gap: "12px", minWidth: 0 }}>
@@ -834,8 +851,12 @@ export default function Dashboard() {
                     <ScoreRing score={scores.dropshippingPerception} color="#FF9900" size={54} />
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: "13px", fontWeight: 700, color: colors.textPrimary, lineHeight: "1.3" }}>Dropship Perception</div>
-                    <div style={{ fontSize: "11px", color: colors.textSecondary, marginTop: "2px", lineHeight: "1.3" }}>Import & supplier cues</div>
+                    <Tooltip content="Evaluates overseas supplier cues, generic copy patterns, and uncurated store signals." dismissOnMouseOut>
+                      <div style={{ fontSize: "13px", fontWeight: 700, color: colors.textPrimary, lineHeight: "1.3", cursor: "help", borderBottom: `1px dashed ${colors.textMuted}`, display: "inline-block" }}>
+                        Dropship Perception ⓘ
+                      </div>
+                    </Tooltip>
+                    <div style={{ fontSize: "11px", color: colors.textSecondary, marginTop: "4px", lineHeight: "1.3" }}>Import & supplier cues</div>
                   </div>
                 </div>
                 <div style={{ padding: "16px 14px", background: colors.surfaceAlt, borderRadius: radius.md, border: `1px solid ${colors.border}`, display: "flex", alignItems: "center", gap: "12px", minWidth: 0 }}>
@@ -843,18 +864,22 @@ export default function Dashboard() {
                     <ScoreRing score={scores.catalogMaintenance} color="#00B779" size={54} />
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: "13px", fontWeight: 700, color: colors.textPrimary, lineHeight: "1.3" }}>Catalog Maintenance</div>
-                    <div style={{ fontSize: "11px", color: colors.textSecondary, marginTop: "2px", lineHeight: "1.3" }}>Polish & metadata</div>
+                    <Tooltip content="Measures active storefront organization, ghost listings, title standards, and catalog upkeep." dismissOnMouseOut>
+                      <div style={{ fontSize: "13px", fontWeight: 700, color: colors.textPrimary, lineHeight: "1.3", cursor: "help", borderBottom: `1px dashed ${colors.textMuted}`, display: "inline-block" }}>
+                        Catalog Maintenance ⓘ
+                      </div>
+                    </Tooltip>
+                    <div style={{ fontSize: "11px", color: colors.textSecondary, marginTop: "4px", lineHeight: "1.3" }}>Polish & metadata</div>
                   </div>
                 </div>
               </div>
             </Card>
           </Layout.Section>
 
-          {/* ── 2.7. ScaleGuard Advisor Insights (Quick Wins & Commercial Recommendations) ── */}
+          {/* ── 2.7. ScaleGuard Advisor Insights (Quick Wins, High-Impact Fixes & Commercial Recommendations) ── */}
           <Layout.Section>
             <SectionLabel>ScaleGuard Advisor Insights</SectionLabel>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "16px" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: "16px" }}>
               {/* Quick Wins */}
               <Card style={{ padding: "20px 24px", display: "flex", flexDirection: "column", height: "100%" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
@@ -862,10 +887,10 @@ export default function Dashboard() {
                   <span style={{ fontSize: "15px", fontWeight: 700, color: colors.textPrimary }}>Top Quick Wins</span>
                 </div>
                 <p style={{ fontSize: "13px", color: colors.textSecondary, marginBottom: "16px" }}>
-                  High-impact, low-effort adjustments you can make right away to improve buyer confidence.
+                  Fast, low-effort adjustments (low volume/effort) to boost buyer confidence right away.
                 </p>
                 {(!data?.quickWins || data.quickWins.length === 0) ? (
-                  <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", minHeight: "150px", border: `1px dashed ${colors.border}`, borderRadius: radius.md, color: colors.textMuted, fontSize: "13px" }}>
+                  <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", minHeight: "130px", border: `1px dashed ${colors.border}`, borderRadius: radius.md, color: colors.textMuted, fontSize: "13px" }}>
                     No pending quick wins! Store looks pristine.
                   </div>
                 ) : (
@@ -875,7 +900,7 @@ export default function Dashboard() {
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", marginBottom: "6px" }}>
                           <span style={{ fontSize: "13px", fontWeight: 700, color: colors.textPrimary }}>{win.title}</span>
                           <div style={{ display: "flex", gap: "4px" }}>
-                            <span style={{ padding: "2px 6px", borderRadius: "4px", background: win.effort === 'Low' ? colors.successBg : colors.infoBg, color: win.effort === 'Low' ? colors.success : colors.info, fontSize: "10px", fontWeight: 700 }}>
+                            <span style={{ padding: "2px 6px", borderRadius: "4px", background: colors.successBg, color: colors.success, fontSize: "10px", fontWeight: 700 }}>
                               {win.effort} Effort
                             </span>
                             <span style={{ padding: "2px 6px", borderRadius: "4px", background: colors.accentLight, color: colors.accent, fontSize: "10px", fontWeight: 700 }}>
@@ -890,6 +915,41 @@ export default function Dashboard() {
                 )}
               </Card>
 
+              {/* High-Impact Fixes */}
+              <Card style={{ padding: "20px 24px", display: "flex", flexDirection: "column", height: "100%" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
+                  <span style={{ fontSize: "18px" }}>🔥</span>
+                  <span style={{ fontSize: "15px", fontWeight: 700, color: colors.textPrimary }}>High-Impact Fixes</span>
+                </div>
+                <p style={{ fontSize: "13px", color: colors.textSecondary, marginBottom: "16px" }}>
+                  Broader catalog improvements affecting higher product volumes to drive conversion gains.
+                </p>
+                {(!data?.highImpactFixes || data.highImpactFixes.length === 0) ? (
+                  <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", minHeight: "130px", border: `1px dashed ${colors.border}`, borderRadius: radius.md, color: colors.textMuted, fontSize: "13px" }}>
+                    No pending high-impact fixes!
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "12px", flex: 1 }}>
+                    {data.highImpactFixes.map((fix, idx) => (
+                      <div key={idx} style={{ padding: "12px", background: colors.surfaceAlt, borderRadius: radius.md, border: `1px solid ${colors.border}` }}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", marginBottom: "6px" }}>
+                          <span style={{ fontSize: "13px", fontWeight: 700, color: colors.textPrimary }}>{fix.title}</span>
+                          <div style={{ display: "flex", gap: "4px" }}>
+                            <span style={{ padding: "2px 6px", borderRadius: "4px", background: colors.warningBg, color: colors.warning, fontSize: "10px", fontWeight: 700 }}>
+                              High Volume
+                            </span>
+                            <span style={{ padding: "2px 6px", borderRadius: "4px", background: colors.accentLight, color: colors.accent, fontSize: "10px", fontWeight 700 }}>
+                              {fix.impact} Impact
+                            </span>
+                          </div>
+                        </div>
+                        <div style={{ fontSize: "12px", color: colors.textSecondary, lineHeight: "1.4" }}>{fix.action}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Card>
+
               {/* Commercial Recommendations */}
               <Card style={{ padding: "20px 24px", display: "flex", flexDirection: "column", height: "100%" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
@@ -897,10 +957,10 @@ export default function Dashboard() {
                   <span style={{ fontSize: "15px", fontWeight: 700, color: colors.textPrimary }}>Commercial Advisor Insights</span>
                 </div>
                 <p style={{ fontSize: "13px", color: colors.textSecondary, marginBottom: "16px" }}>
-                  Strategic recommendations for store scaling, conversion optimization, and paid ad readiness.
+                  Strategic guidance for store scaling, conversion optimization, and paid ad readiness.
                 </p>
                 {(!data?.commercialRecommendations || data.commercialRecommendations.length === 0) ? (
-                  <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", minHeight: "150px", border: `1px dashed ${colors.border}`, borderRadius: radius.md, color: colors.textMuted, fontSize: "13px" }}>
+                  <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", minHeight: "130px", border: `1px dashed ${colors.border}`, borderRadius: radius.md, color: colors.textMuted, fontSize: "13px" }}>
                     All commercial readiness standards met. Ready for paid traffic!
                   </div>
                 ) : (
@@ -920,7 +980,7 @@ export default function Dashboard() {
           {/* ── Impact Buckets ── */}
           {impactBucketSummary && impactBucketSummary.length > 0 && (
             <Layout.Section>
-              <SectionLabel>Issues By Commercial Impact</SectionLabel>
+              <SectionLabel>Issues by Commercial Impact</SectionLabel>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "12px" }}>
                 {impactBucketSummary.map((bucket) => {
                   const bucketSeverityCfg = SEVERITY_CONFIG[bucket.highestSeverity?.toUpperCase()] || SEVERITY_CONFIG.LOW;
@@ -959,11 +1019,11 @@ export default function Dashboard() {
                       </div>
                       <div style={{ display: "flex", gap: "12px", marginTop: "4px" }}>
                         <span style={{ fontSize: "12px", fontWeight: 700, color: colors.textPrimary }}>
-                          {bucket.issueCount} issue{bucket.issueCount !== 1 ? 's' : ''}
+                          {bucket.issueCount} issue type{bucket.issueCount !== 1 ? 's' : ''}
                         </span>
                         {bucket.affectedProductCount > 0 && (
                           <span style={{ fontSize: "12px", color: colors.textSecondary }}>
-                            · {bucket.affectedProductCount} product{bucket.affectedProductCount !== 1 ? 's' : ''} affected
+                            · {bucket.affectedProductCount} affected product{bucket.affectedProductCount !== 1 ? 's' : ''}
                           </span>
                         )}
                       </div>
@@ -1369,8 +1429,8 @@ export default function Dashboard() {
                   itemCount={filteredProducts.length}
                   headings={[
                     { title: "Product Title" },
-                    { title: "Desc Quality" },
-                    { title: "Completeness" },
+                    { title: <Tooltip content="Measures copy length, structure, benefit orientation, and lack of supplier boilerplate. A high description score means strong copy, but a product can still be high risk if delivery or image issues exist." dismissOnMouseOut><span>Desc Quality ⓘ</span></Tooltip> },
+                    { title: <Tooltip content="Measures title, vendor, product type, tag, variant, image, and specification field coverage across catalog items." dismissOnMouseOut><span>Completeness ⓘ</span></Tooltip> },
                     { title: "Primary Issue" },
                     { title: "Recent Orders" },
                     { title: "Status / Severity" },

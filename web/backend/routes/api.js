@@ -571,6 +571,7 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
     let dataIssues = [];
     let commercialRecommendations = [];
     let quickWins = [];
+    let highImpactFixes = [];
 
     // Basic data sufficiency check (independent of audit)
     if (products.length < 5) {
@@ -607,42 +608,40 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
       );
       const deadInventoryIssues = issues.filter(i => i.type === 'DEAD_INVENTORY');
 
-      // Category Scoring (Phase 2 tiered)
-      scores.productDataQuality = Math.max(0,
-        100
-        - (pricingIssues.length * 15)
-        - (titleIssues.filter(i => i.type === 'INVALID_PRODUCT_TITLE').length * 15)
-        - (titleIssues.filter(i => i.type === 'WEAK_PRODUCT_TITLE').length * 5)
-        - (titleIssues.filter(i => i.type === 'SERIAL_PRODUCT_TITLE').length * 8)
-        - (titleIssues.filter(i => i.type === 'KEYWORD_STUFFED_TITLE').length * 4)
-        - (descIssues.filter(i => i.type === 'MISSING_DESCRIPTION').length * 10)
-        - (descIssues.filter(i => i.type === 'WEAK_DESCRIPTION').length * 5)
-        - (descIssues.filter(i => i.type === 'GENERIC_DESCRIPTION').length * 3)
-        - (descIssues.filter(i => i.type === 'SPEC_DUMP_DESCRIPTION').length * 15)
-        - (descIssues.filter(i => i.type === 'SUPPLIER_DESCRIPTION').length * 10)
-        - (descIssues.filter(i => i.type === 'REPETITIVE_GENERIC_DESCRIPTION').length * 8)
-        - (descIssues.filter(i => i.type === 'MISSING_SIZE_GUIDE').length * 10)
-        - (descIssues.filter(i => i.type === 'MISSING_PRODUCT_SPECIFICATION').length * 5)
-      );
-      scores.visualTrust = Math.max(0,
-        100
-        - (noImageIssues.length * 30)
-        - (imageIssues.filter(i => i.type === 'LOW_IMAGE_COUNT').length * 15)
-        - (imageIssues.filter(i => i.type === 'EXCESSIVE_IMAGE_COUNT').length * 5)
-        - (imageIssues.filter(i => i.type === 'DUPLICATE_IMAGES').length * 10)
-        - (imageIssues.filter(i => i.type === 'LIMITED_IMAGE_DIVERSITY').length * 5)
-        - (imageIssues.filter(i => i.type === 'LOW_QUALITY_IMAGE').length * 15)
-        - (imageIssues.filter(i => i.type === 'BELOW_RECOMMENDED_RESOLUTION').length * 8)
-        - (imageIssues.filter(i => i.type === 'POOR_PRESENTATION').length * 5)
-        - (imageIssues.filter(i => i.type === 'INCONSISTENT_PRIMARY_IMAGE').length * 20)
-        - (imageIssues.filter(i => i.type === 'INCONSISTENT_STORE_VISUALS').length * 5)
-      );
-      scores.catalogConsistency = Math.max(0, 100 
-        - (consistencyIssues.filter(i => !['INCOMPLETE_ORGANIZATION', 'MISSING_RECOMMENDED_METAFIELDS'].includes(i.type)).length * 20)
-        - (inventoryIssues.length * 15)
-        - (consistencyIssues.filter(i => i.type === 'INCOMPLETE_ORGANIZATION').length * 2)
-        - (consistencyIssues.filter(i => i.type === 'MISSING_RECOMMENDED_METAFIELDS').length * 2)
-      );
+      // Category Scoring (Nuanced, catalog-share proportional)
+      const totalScannedCount = Math.max(1, products.length);
+
+      const avgProdDescScore = products.length > 0
+        ? products.reduce((sum, p) => sum + (p.descriptionQualityScore || 0), 0) / products.length
+        : 80;
+      const avgProdCompScore = products.length > 0
+        ? products.reduce((sum, p) => sum + (p.completenessScore || 0), 0) / products.length
+        : 80;
+
+      const baseDataQuality = Math.round((avgProdDescScore * 0.6) + (avgProdCompScore * 0.4));
+      const pricingAffectedShare = new Set(pricingIssues.flatMap(i => i.affectedEntities || [])).size / totalScannedCount;
+      const titleAffectedShare = new Set(titleIssues.flatMap(i => i.affectedEntities || [])).size / totalScannedCount;
+      const descAffectedShare = new Set(descIssues.flatMap(i => i.affectedEntities || [])).size / totalScannedCount;
+
+      const dataQualityDeductions = (pricingAffectedShare * 30) + (titleAffectedShare * 20) + (descAffectedShare * 20);
+      scores.productDataQuality = Math.max(15, Math.min(100, Math.round(baseDataQuality - dataQualityDeductions)));
+
+      const noImgShare = new Set(noImageIssues.flatMap(i => i.affectedEntities || [])).size / totalScannedCount;
+      const lowImgShare = new Set(imageIssues.filter(i => i.type === 'LOW_IMAGE_COUNT').flatMap(i => i.affectedEntities || [])).size / totalScannedCount;
+      const dupImgShare = new Set(imageIssues.filter(i => i.type === 'DUPLICATE_IMAGES').flatMap(i => i.affectedEntities || [])).size / totalScannedCount;
+      const lowQualImgShare = new Set(imageIssues.filter(i => i.type === 'LOW_QUALITY_IMAGE').flatMap(i => i.affectedEntities || [])).size / totalScannedCount;
+      const poorPresShare = new Set(imageIssues.filter(i => i.type === 'POOR_PRESENTATION').flatMap(i => i.affectedEntities || [])).size / totalScannedCount;
+
+      const visualTrustDeductions = (noImgShare * 50) + (lowImgShare * 25) + (dupImgShare * 20) + (lowQualImgShare * 25) + (poorPresShare * 15);
+      scores.visualTrust = Math.max(15, Math.min(100, Math.round(100 - visualTrustDeductions)));
+
+      const consistencyAffectedShare = new Set(consistencyIssues.flatMap(i => i.affectedEntities || [])).size / totalScannedCount;
+      const inventoryAffectedShare = new Set(inventoryIssues.flatMap(i => i.affectedEntities || [])).size / totalScannedCount;
+
+      let consistencyDeduction = (consistencyAffectedShare * 40) + (inventoryAffectedShare * 30);
+      if (consistencyIssues.some(i => i.type === 'HIGH_FRAGMENTATION')) consistencyDeduction += 15;
+
+      scores.catalogConsistency = Math.max(15, Math.min(100, Math.round(100 - consistencyDeduction)));
 
       // Build "why" explanations for each score category
       const buildExplanation = (score, parts, goodMsg) =>
@@ -697,9 +696,9 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
 
       // Conversion Readiness: Weighted average + performance & critical penalties
       const baseReadiness = (scores.productDataQuality * 0.4) + (scores.visualTrust * 0.4) + (scores.catalogConsistency * 0.2);
-      const performancePenalty = perfRiskIssues.length * 20; // Heavier penalty for failing top sellers
+      const performancePenalty = Math.round((perfRiskIssues.length / totalScannedCount) * 30);
       
-      let finalReadiness = Math.round(Math.max(0, baseReadiness - performancePenalty));
+      let finalReadiness = Math.round(Math.max(15, baseReadiness - performancePenalty));
 
       // CRITICAL FAIL-CLOSED LOGIC: 
       // If any critical issues exist (Pricing Errors, High Performance Quality Risk), 
@@ -715,33 +714,34 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
         const fIssues = issues.filter(i => ['DELIVERY_RISK_LOW', 'DELIVERY_RISK_MEDIUM', 'DELIVERY_RISK_HIGH', 'DELIVERY_RISK_CRITICAL'].includes(i.type));
         const longDelNoCommIssues = issues.filter(i => i.type === 'LONG_DELIVERY_NO_COMM');
         
-        let dropshipDeductions = 0;
-        let riskDeductions = 0;
+        let riskDeductionShare = 0;
         
         for (const issue of fIssues) {
           const ev = typeof issue.evidence === 'string' ? JSON.parse(issue.evidence) : issue.evidence;
           const model = ev?.fulfillmentModel;
-          const type = issue.type;
+          const affectedRatio = Math.min(1, (issue.affectedEntities || []).length / totalScannedCount);
           
           if (model === 'OVERSEAS_DROPSHIP') {
-            dropshipDeductions += 5;
+            riskDeductionShare += affectedRatio * 20;
           }
           
-          if (type === 'DELIVERY_RISK_CRITICAL') {
-            riskDeductions += 12;
-          } else if (type === 'DELIVERY_RISK_HIGH') {
-            riskDeductions += 6;
-          } else if (type === 'DELIVERY_RISK_MEDIUM') {
-            riskDeductions += 3;
+          if (issue.type === 'DELIVERY_RISK_CRITICAL') {
+            riskDeductionShare += affectedRatio * 35;
+          } else if (issue.type === 'DELIVERY_RISK_HIGH') {
+            riskDeductionShare += affectedRatio * 20;
+          } else if (issue.type === 'DELIVERY_RISK_MEDIUM') {
+            riskDeductionShare += affectedRatio * 10;
           }
         }
         
-        const longDelDeductions = longDelNoCommIssues.length * 8;
-        return Math.max(0, 100 - dropshipDeductions - riskDeductions - longDelDeductions);
+        const longDelShare = new Set(longDelNoCommIssues.flatMap(i => i.affectedEntities || [])).size / totalScannedCount;
+        riskDeductionShare += longDelShare * 20;
+        
+        return Math.max(20, Math.min(100, Math.round(100 - riskDeductionShare)));
       })();
 
       scores.dropshippingPerception = (() => {
-        let score = 100;
+        let deduction = 0;
         
         const unrealisticInv = issues.filter(i => i.type === 'UNREALISTIC_INVENTORY');
         const uniqueUnrealisticProds = new Set();
@@ -751,96 +751,45 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
             if (prod) uniqueUnrealisticProds.add(prod.shopifyId);
           });
         });
-        score -= uniqueUnrealisticProds.size * 10;
-        
-        const uniformInv = issues.filter(i => i.type === 'UNIFORM_INVENTORY');
-        const uniqueUniformProds = new Set(uniformInv.flatMap(i => i.affectedEntities || []));
-        score -= uniqueUniformProds.size * 5;
+        deduction += (uniqueUnrealisticProds.size / totalScannedCount) * 25;
         
         const supplierDesc = issues.filter(i => i.type === 'SUPPLIER_DESCRIPTION');
-        const uniqueSupplierProds = new Set(supplierDesc.flatMap(i => i.affectedEntities || []));
-        score -= uniqueSupplierProds.size * 15;
-        
-        const specDumpDesc = issues.filter(i => i.type === 'SPEC_DUMP_DESCRIPTION');
-        const uniqueSpecDumpProds = new Set(specDumpDesc.flatMap(i => i.affectedEntities || []));
-        score -= uniqueSpecDumpProds.size * 10;
+        deduction += (new Set(supplierDesc.flatMap(i => i.affectedEntities || [])).size / totalScannedCount) * 30;
         
         const lowQualityImg = issues.filter(i => i.type === 'LOW_QUALITY_IMAGE');
-        const uniqueLowQualityProds = new Set(lowQualityImg.flatMap(i => i.affectedEntities || []));
-        score -= uniqueLowQualityProds.size * 10;
+        deduction += (new Set(lowQualityImg.flatMap(i => i.affectedEntities || [])).size / totalScannedCount) * 20;
         
         const duplicateImg = issues.filter(i => i.type === 'DUPLICATE_IMAGES');
-        const uniqueDuplicateProds = new Set(duplicateImg.flatMap(i => i.affectedEntities || []));
-        score -= uniqueDuplicateProds.size * 5;
-        
-        const belowRec = issues.filter(i => i.type === 'BELOW_RECOMMENDED_RESOLUTION');
-        const uniqueBelowRecProds = new Set(belowRec.flatMap(i => i.affectedEntities || []));
-        score -= uniqueBelowRecProds.size * 3;
-
-        const poorPres = issues.filter(i => i.type === 'POOR_PRESENTATION');
-        const uniquePoorPresProds = new Set(poorPres.flatMap(i => i.affectedEntities || []));
-        score -= uniquePoorPresProds.size * 5;
+        deduction += (new Set(duplicateImg.flatMap(i => i.affectedEntities || [])).size / totalScannedCount) * 15;
         
         const dropshipDelivery = issues.filter(i => {
           const ev = typeof i.evidence === 'string' ? JSON.parse(i.evidence) : i.evidence;
           return ['DELIVERY_RISK_LOW', 'DELIVERY_RISK_MEDIUM', 'DELIVERY_RISK_HIGH', 'DELIVERY_RISK_CRITICAL'].includes(i.type) && 
             ev?.fulfillmentModel === 'OVERSEAS_DROPSHIP';
         });
-        const uniqueDropshipDeliveryProds = new Set(dropshipDelivery.flatMap(i => i.affectedEntities || []));
-        score -= uniqueDropshipDeliveryProds.size * 15;
+        deduction += (new Set(dropshipDelivery.flatMap(i => i.affectedEntities || [])).size / totalScannedCount) * 30;
         
-        const priceConsistency = issues.filter(i => ['VARIANT_PRICE_GAP', 'CATALOG_INCONSISTENCY'].includes(i.type));
-        const uniquePriceConsistProds = new Set(priceConsistency.flatMap(i => i.affectedEntities || []));
-        score -= uniquePriceConsistProds.size * 10;
+        if (issues.some(i => i.type === 'HIGH_FRAGMENTATION')) deduction += 15;
         
-        if (issues.some(i => i.type === 'HIGH_FRAGMENTATION')) {
-          score -= 20;
-        }
-        if (issues.some(i => ['COLLECTION_PRICE_OUTLIER', 'INCONSISTENT_PRICE_POSITIONING'].includes(i.type))) {
-          score -= 15;
-        }
-        
-        return Math.max(0, Math.min(100, score));
+        return Math.max(15, Math.min(100, Math.round(100 - deduction)));
       })();
 
       scores.catalogMaintenance = (() => {
-        let score = 100;
+        let deduction = 0;
         
         const dIssues = issues.filter(i => ['WEAK_DESCRIPTION', 'MISSING_DESCRIPTION', 'GENERIC_DESCRIPTION', 'REPETITIVE_GENERIC_DESCRIPTION'].includes(i.type));
-        const uniqueDescProds = new Set(dIssues.flatMap(i => i.affectedEntities || []));
-        score -= uniqueDescProds.size * 5;
+        deduction += (new Set(dIssues.flatMap(i => i.affectedEntities || [])).size / totalScannedCount) * 20;
         
         const tIssues = issues.filter(i => ['WEAK_PRODUCT_TITLE', 'INVALID_PRODUCT_TITLE', 'SERIAL_PRODUCT_TITLE', 'KEYWORD_STUFFED_TITLE'].includes(i.type));
-        const uniqueTitleProds = new Set(tIssues.flatMap(i => i.affectedEntities || []));
-        score -= uniqueTitleProds.size * 5;
+        deduction += (new Set(tIssues.flatMap(i => i.affectedEntities || [])).size / totalScannedCount) * 20;
         
         const ghostListings = issues.filter(i => i.type === 'GHOST_LISTING');
-        const uniqueGhostProds = new Set(ghostListings.flatMap(i => i.affectedEntities || []));
-        score -= uniqueGhostProds.size * 15;
+        deduction += (new Set(ghostListings.flatMap(i => i.affectedEntities || [])).size / totalScannedCount) * 25;
         
         const imageIssuesList = issues.filter(i => ['NO_PRODUCT_IMAGES', 'LOW_IMAGE_COUNT', 'BELOW_RECOMMENDED_RESOLUTION', 'POOR_PRESENTATION'].includes(i.type));
-        const uniqueImageProds = new Set(imageIssuesList.flatMap(i => i.affectedEntities || []));
-        score -= uniqueImageProds.size * 8;
+        deduction += (new Set(imageIssuesList.flatMap(i => i.affectedEntities || [])).size / totalScannedCount) * 20;
         
-        const supplierIssuesList = issues.filter(i => ['SUPPLIER_DESCRIPTION', 'SPEC_DUMP_DESCRIPTION'].includes(i.type));
-        const uniqueSupplierProds = new Set(supplierIssuesList.flatMap(i => i.affectedEntities || []));
-        score -= uniqueSupplierProds.size * 10;
-        
-        const inventoryIssuesList = issues.filter(i => i.type === 'UNIFORM_INVENTORY');
-        const uniqueInvProds = new Set(inventoryIssuesList.flatMap(i => i.affectedEntities || []));
-        score -= uniqueInvProds.size * 10;
-        
-        const unrealisticInv = issues.filter(i => i.type === 'UNREALISTIC_INVENTORY');
-        const uniqueUnrealisticProds = new Set();
-        unrealisticInv.forEach(i => {
-          (i.affectedEntities || []).forEach(vid => {
-            const prod = products.find(p => p.variants && p.variants.some(v => v.shopifyId === vid));
-            if (prod) uniqueUnrealisticProds.add(prod.shopifyId);
-          });
-        });
-        score -= uniqueUnrealisticProds.size * 10;
-        
-        return Math.max(0, Math.min(100, score));
+        return Math.max(20, Math.min(100, Math.round(100 - deduction)));
       })();
 
       scores.trustScore = (() => {
@@ -859,10 +808,10 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
         );
         
         if (issues.some(i => i.type === 'CATALOG_DUMP_RISK')) {
-          score -= 25;
+          score -= 15;
         }
         
-        return Math.max(0, Math.min(100, score));
+        return Math.max(15, Math.min(100, score));
       })();
 
       scores.trustClassification = (() => {
@@ -1170,84 +1119,116 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
         commercialRecommendations.push("Low quality product images are dragging down store perception.");
       }
 
-      // ── 7.3 QUICK WINS ENGINE ─────────────────────────────────────────────
-      const possibleQuickWins = [];
+      // ── 7.3 QUICK WINS & HIGH-IMPACT FIXES ENGINE ────────────────────────
+      const possibleRecommendations = [];
       
       const ghostCount = issues.filter(i => i.type === 'GHOST_LISTING').length;
       if (ghostCount > 0) {
-        possibleQuickWins.push({
+        possibleRecommendations.push({
           title: `Fix ${ghostCount} ghost listing(s)`,
           action: `Assign these published products to storefront collections in Shopify Admin.`,
           effort: 'Low',
           impact: 'High',
+          count: ghostCount,
           priority: 9.0
         });
       }
       
       const sizeGuideCount = issues.filter(i => i.type === 'MISSING_SIZE_GUIDE').length;
       if (sizeGuideCount > 0) {
-        possibleQuickWins.push({
+        possibleRecommendations.push({
           title: `Add size guides to ${sizeGuideCount} products`,
           action: `Provide sizing charts or fit tables for apparel or footwear items.`,
           effort: 'Medium',
           impact: 'High',
+          count: sizeGuideCount,
           priority: 2.67
         });
       }
       
       const weakDescCount = issues.filter(i => ['WEAK_DESCRIPTION', 'MISSING_DESCRIPTION'].includes(i.type)).length;
       if (weakDescCount > 0) {
-        possibleQuickWins.push({
+        possibleRecommendations.push({
           title: `Improve descriptions on ${weakDescCount} products`,
           action: `Expand descriptions to include benefits, usage, and trust details.`,
           effort: 'Medium',
           impact: 'High',
+          count: weakDescCount,
           priority: 2.0
         });
       }
       
       const lowImgCount = issues.filter(i => i.type === 'LOW_QUALITY_IMAGE').length;
       if (lowImgCount > 0) {
-        possibleQuickWins.push({
+        possibleRecommendations.push({
           title: `Replace low-quality images on ${lowImgCount} products`,
           action: `Upload clear, high-resolution product photography (minimum 800x800 px).`,
           effort: 'Medium',
           impact: 'High',
+          count: lowImgCount,
           priority: 2.33
         });
       }
       
       const incompleteOrgCount = issues.filter(i => i.type === 'INCOMPLETE_ORGANIZATION').length;
       if (incompleteOrgCount > 0) {
-        possibleQuickWins.push({
+        possibleRecommendations.push({
           title: `Fix metadata on ${incompleteOrgCount} products`,
           action: `Assign missing product types, vendors, or tags in Shopify Admin.`,
           effort: 'Low',
           impact: 'Medium',
+          count: incompleteOrgCount,
           priority: 6.0
         });
       }
       
       const duplicateImgCount = issues.filter(i => i.type === 'DUPLICATE_IMAGES').length;
       if (duplicateImgCount > 0) {
-        possibleQuickWins.push({
+        possibleRecommendations.push({
           title: `Remove duplicate images from ${duplicateImgCount} products`,
           action: `Delete repeated near-identical files to clean product galleries.`,
           effort: 'Low',
           impact: 'Medium',
+          count: duplicateImgCount,
           priority: 5.0
         });
       }
+
+      // Split into Quick Wins (low effort AND small volume <= 20 products) vs High-Impact Fixes (larger volume or medium/high effort)
+      const sortedRecs = possibleRecommendations.sort((a, b) => b.priority - a.priority);
       
-      quickWins = possibleQuickWins
-        .sort((a, b) => b.priority - a.priority)
+      quickWins = sortedRecs
+        .filter(w => w.effort === 'Low' && w.count <= 20)
         .slice(0, 5)
         .map(w => ({
           title: w.title,
           action: w.action,
           effort: w.effort,
-          impact: w.impact
+          impact: w.impact,
+          count: w.count,
         }));
+
+      highImpactFixes = sortedRecs
+        .filter(w => w.count > 20 || w.effort !== 'Low')
+        .slice(0, 5)
+        .map(w => ({
+          title: w.title,
+          action: w.action,
+          effort: w.effort,
+          impact: w.impact,
+          count: w.count,
+        }));
+
+      // Fallback: If no quickWins under strict filters, include top sorted items
+      if (quickWins.length === 0 && sortedRecs.length > 0) {
+        quickWins = sortedRecs.slice(0, 3).map(w => ({
+          title: w.title,
+          action: w.action,
+          effort: w.effort,
+          impact: w.impact,
+          count: w.count,
+        }));
+      }
 
       // Map product breakdown (all products with their issues)
       productBreakdown = products.map(p => {
@@ -1271,7 +1252,7 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
       });
     }
 
-    // Determine Verdict - Business Focused
+    // Determine Verdict - Commercial Guidance Focused
     let verdict = 'Not Ready';
     let storeRecommendation = '';
     const mainScore = scores.conversionReadiness;
@@ -1286,15 +1267,14 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
       verdict = 'Not Ready: Do not run ads';
       storeRecommendation = 'Do not run ads to the store until product descriptions and catalog quality are improved to prevent low ROAS.';
     } else {
-      verdict = 'High Risk: Stop paid traffic';
+      verdict = 'High Risk: Review before scaling paid traffic';
       storeRecommendation = criticalIssuesExist 
-        ? 'Critical errors detected (e.g. pricing or top-seller quality). Stop all paid traffic immediately to prevent budget waste.'
-        : 'Immediate action required. Stop all paid traffic to prevent budget waste due to catalog quality issues.';
+        ? 'Critical errors detected (e.g. pricing or top-seller quality). Fix priority issues before increasing ad spend to protect your ROAS.'
+        : 'Immediate action required. Review and fix priority issues before scaling paid traffic to prevent wasted ad spend.';
     }
 
     // ── Store Readiness Narrative ─────────────────────────────────────────────
-    // A calm, merchant-focused narrative that frames the overall situation
-    // before showing the detailed issue list.
+    // Empowering, action-focused narrative for merchants.
     let storeReadinessNarrative = null;
     if (latestAudit && issuesList.length > 0) {
       const criticalOrHighCount = issuesList.filter(i => ['CRITICAL', 'HIGH'].includes(i.severity?.toUpperCase())).length;
@@ -1303,11 +1283,11 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
       if (mainScore >= 85) {
         storeReadinessNarrative = `Your store is in good shape. A small number of issues have been flagged for your review, but overall your catalog meets the readiness standards for scaling ad spend. ScaleGuard has prioritized any remaining actions for you below.`;
       } else if (mainScore >= 70) {
-        storeReadinessNarrative = `Your store has several trust and conversion opportunities that are worth addressing before increasing ad spend. The issues are fixable, and ScaleGuard has prioritized the highest-impact actions first. Resolving the ${criticalOrHighCount} critical and high-priority issues will make the biggest difference to your conversion rate and ad performance.`;
+        storeReadinessNarrative = `Your store has several trust and conversion opportunities that are worth addressing before increasing ad spend. These issues are fixable, and ScaleGuard has prioritized the highest-impact actions first. Resolving the ${criticalOrHighCount} critical and high-priority issues will make the biggest difference to your conversion rate and ad performance.`;
       } else if (mainScore >= 45) {
         storeReadinessNarrative = `Your store has a number of trust and conversion risks that should be reviewed before increasing ad spend. These issues are fixable — ScaleGuard has identified the highest-priority actions first. Approximately ${totalAffectedProducts} products are affected by at least one issue. Focus on the critical and high-priority items to improve your readiness score and ad performance.`;
       } else {
-        storeReadinessNarrative = `Your store currently has significant trust and conversion risks that are likely to result in poor ad performance if left unaddressed. ScaleGuard has identified the most critical issues and prioritised them for you. This does not mean your store is beyond recovery — it means there is clear work to do before scaling ad spend. Work through the priority fixes below to improve your readiness score.`;
+        storeReadinessNarrative = `Your store currently has significant trust and conversion risks that are likely to result in poor ad performance if left unaddressed. These issues are fixable — ScaleGuard has prioritized the most important actions so you know where to start before scaling ad spend. Work through the priority fixes below to improve your readiness score.`;
       }
     } else if (latestAudit && issuesList.length === 0) {
       storeReadinessNarrative = `Excellent — no significant issues detected in your catalog. Your store meets the readiness standards for scaling ad spend. Continue monitoring with regular audits to maintain this standard as you grow.`;
@@ -1393,7 +1373,7 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
     const PLAN_LIMITS = {
       LIGHT: { maxProducts: 20, imagesPerProduct: 2, scanFrequency: 'Weekly' },
       GROWTH: { maxProducts: 75, imagesPerProduct: 3, scanFrequency: 'Daily' },
-      PRO: { maxProducts: 200, imagesPerProduct: 4, scanFrequency: 'Every 3 Hours' }
+      PRO: { maxProducts: 200, imagesPerProduct: 5, scanFrequency: 'Every 3 Hours' }
     };
     const defaultLimits = PLAN_LIMITS[planName] || PLAN_LIMITS.LIGHT;
 
@@ -1466,6 +1446,7 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
       scoreExplanations: latestAudit ? scoreExplanations : null,
       commercialRecommendations: latestAudit ? commercialRecommendations : [],
       quickWins: latestAudit ? quickWins : [],
+      highImpactFixes: latestAudit ? highImpactFixes : [],
       issues: issuesList,
       products: productBreakdown,
       plan: planDetails.plan,

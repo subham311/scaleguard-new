@@ -8,7 +8,7 @@ import { detectProductLanguage } from '../../utils/languageDetector.js';
 const PLAN_LIMITS = {
   LIGHT:  { maxProducts: 20,  imagesPerProduct: 2 },
   GROWTH: { maxProducts: 75,  imagesPerProduct: 3 },
-  PRO:    { maxProducts: 200, imagesPerProduct: 4 },
+  PRO:    { maxProducts: 200, imagesPerProduct: 5 },
 };
 
 const DEFAULT_LIMITS = PLAN_LIMITS.LIGHT;

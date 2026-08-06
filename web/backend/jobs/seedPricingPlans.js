@@ -47,10 +47,10 @@ const pricingPlans = [
   },
   {
     name: 'Pro',
-    price: 99.99,
+    price: 99.0,
     description: 'Full-suite commercial intelligence engine for high-volume merchants.',
     maxProducts: 200,
-    imagesPerProduct: 4,
+    imagesPerProduct: 5,
     auditType: 'DEEPER',
     scanFrequency: 'FASTER',
     features: [
