@@ -938,7 +938,7 @@ export default function Dashboard() {
                             <span style={{ padding: "2px 6px", borderRadius: "4px", background: colors.warningBg, color: colors.warning, fontSize: "10px", fontWeight: 700 }}>
                               High Volume
                             </span>
-                            <span style={{ padding: "2px 6px", borderRadius: "4px", background: colors.accentLight, color: colors.accent, fontSize: "10px", fontWeight 700 }}>
+                            <span style={{ padding: "2px 6px", borderRadius: "4px", background: colors.accentLight, color: colors.accent, fontSize: "10px", fontWeight: 700 }}>
                               {fix.impact} Impact
                             </span>
                           </div>
