@@ -590,6 +590,16 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
       const issues = latestAudit.issues.filter(i => !ignoredRuleTypes.has(i.type));
       criticalIssuesExist = issues.some(i => i.severity === 'CRITICAL');
       
+      // Defensive helper: ensure affectedEntities is always an array
+      // (Prisma/SQLite may store JSON arrays as strings)
+      const safeEntities = (entities) => {
+        if (Array.isArray(entities)) return entities;
+        if (typeof entities === 'string') {
+          try { return JSON.parse(entities); } catch { return []; }
+        }
+        return [];
+      };
+      
       // Calculate deductions
       const criticalIssues = issues.filter(i => i.severity === 'CRITICAL');
       const pricingIssues = issues.filter(i => ['PRICING_ERROR', 'ABSOLUTE_PRICING_ANOMALY'].includes(i.type));
@@ -600,7 +610,7 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
       const noImageIssues = issues.filter(i => i.type === 'NO_PRODUCT_IMAGES');
       const imageIssues = issues.filter(i => ['NO_PRODUCT_IMAGES', 'LOW_IMAGE_COUNT', 'EXCESSIVE_IMAGE_COUNT', 'DUPLICATE_IMAGES', 'LIMITED_IMAGE_DIVERSITY', 'LOW_QUALITY_IMAGE', 'BELOW_RECOMMENDED_RESOLUTION', 'POOR_PRESENTATION', 'INCONSISTENT_PRIMARY_IMAGE', 'INCONSISTENT_STORE_VISUALS'].includes(i.type));
       const consistencyIssues = issues.filter(i =>
-        ['CATALOG_INCONSISTENCY', 'HIGH_FRAGMENTATION', 'INCONSISTENT_PRICE_POSITIONING', 'VARIANT_PRICE_GAP', 'COLLECTION_PRICE_OUTLIER', 'INCOMPLETE_ORGANIZATION', 'MISSING_RECOMMENDED_METAFIELDS'].includes(i.type)
+        ['HIGH_FRAGMENTATION', 'INCONSISTENT_PRICE_POSITIONING', 'VARIANT_PRICE_GAP', 'COLLECTION_PRICE_OUTLIER', 'INCOMPLETE_ORGANIZATION', 'MISSING_RECOMMENDED_METAFIELDS'].includes(i.type)
       );
       const perfRiskIssues = issues.filter(i => i.type === 'HIGH_PERFORMANCE_LOW_QUALITY');
       const inventoryIssues = issues.filter(i =>
@@ -619,24 +629,44 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
         : 80;
 
       const baseDataQuality = Math.round((avgProdDescScore * 0.6) + (avgProdCompScore * 0.4));
-      const pricingAffectedShare = new Set(pricingIssues.flatMap(i => i.affectedEntities || [])).size / totalScannedCount;
-      const titleAffectedShare = new Set(titleIssues.flatMap(i => i.affectedEntities || [])).size / totalScannedCount;
-      const descAffectedShare = new Set(descIssues.flatMap(i => i.affectedEntities || [])).size / totalScannedCount;
+      const pricingAffectedShare = new Set(pricingIssues.flatMap(i => safeEntities(i.affectedEntities))).size / totalScannedCount;
+      const titleAffectedShare = new Set(titleIssues.flatMap(i => safeEntities(i.affectedEntities))).size / totalScannedCount;
+      const descAffectedShare = new Set(descIssues.flatMap(i => safeEntities(i.affectedEntities))).size / totalScannedCount;
 
       const dataQualityDeductions = (pricingAffectedShare * 30) + (titleAffectedShare * 20) + (descAffectedShare * 20);
       scores.productDataQuality = Math.max(15, Math.min(100, Math.round(baseDataQuality - dataQualityDeductions)));
 
-      const noImgShare = new Set(noImageIssues.flatMap(i => i.affectedEntities || [])).size / totalScannedCount;
-      const lowImgShare = new Set(imageIssues.filter(i => i.type === 'LOW_IMAGE_COUNT').flatMap(i => i.affectedEntities || [])).size / totalScannedCount;
-      const dupImgShare = new Set(imageIssues.filter(i => i.type === 'DUPLICATE_IMAGES').flatMap(i => i.affectedEntities || [])).size / totalScannedCount;
-      const lowQualImgShare = new Set(imageIssues.filter(i => i.type === 'LOW_QUALITY_IMAGE').flatMap(i => i.affectedEntities || [])).size / totalScannedCount;
-      const poorPresShare = new Set(imageIssues.filter(i => i.type === 'POOR_PRESENTATION').flatMap(i => i.affectedEntities || [])).size / totalScannedCount;
+      const noImgShare = new Set(noImageIssues.flatMap(i => safeEntities(i.affectedEntities))).size / totalScannedCount;
+      const lowImgShare = new Set(imageIssues.filter(i => i.type === 'LOW_IMAGE_COUNT').flatMap(i => safeEntities(i.affectedEntities))).size / totalScannedCount;
+      const dupImgShare = new Set(imageIssues.filter(i => i.type === 'DUPLICATE_IMAGES').flatMap(i => safeEntities(i.affectedEntities))).size / totalScannedCount;
+      const lowQualImgShare = new Set(imageIssues.filter(i => i.type === 'LOW_QUALITY_IMAGE').flatMap(i => safeEntities(i.affectedEntities))).size / totalScannedCount;
+      const poorPresShare = new Set(imageIssues.filter(i => i.type === 'POOR_PRESENTATION').flatMap(i => safeEntities(i.affectedEntities))).size / totalScannedCount;
+      const excessiveImgShare = new Set(imageIssues.filter(i => i.type === 'EXCESSIVE_IMAGE_COUNT').flatMap(i => safeEntities(i.affectedEntities))).size / totalScannedCount;
+      const limitedDiversityShare = new Set(imageIssues.filter(i => i.type === 'LIMITED_IMAGE_DIVERSITY').flatMap(i => safeEntities(i.affectedEntities))).size / totalScannedCount;
+      const belowRecResShare = new Set(imageIssues.filter(i => i.type === 'BELOW_RECOMMENDED_RESOLUTION').flatMap(i => safeEntities(i.affectedEntities))).size / totalScannedCount;
+      const inconsistentPrimaryShare = new Set(imageIssues.filter(i => i.type === 'INCONSISTENT_PRIMARY_IMAGE').flatMap(i => safeEntities(i.affectedEntities))).size / totalScannedCount;
+      const inconsistentVisualsShare = new Set(imageIssues.filter(i => i.type === 'INCONSISTENT_STORE_VISUALS').flatMap(i => safeEntities(i.affectedEntities))).size / totalScannedCount;
 
-      const visualTrustDeductions = (noImgShare * 50) + (lowImgShare * 25) + (dupImgShare * 20) + (lowQualImgShare * 25) + (poorPresShare * 15);
+      const visualTrustDeductions = (noImgShare * 50) + (lowImgShare * 25) + (dupImgShare * 20) + (lowQualImgShare * 25) + (poorPresShare * 15) + (excessiveImgShare * 10) + (limitedDiversityShare * 15) + (belowRecResShare * 10) + (inconsistentPrimaryShare * 20) + (inconsistentVisualsShare * 10);
       scores.visualTrust = Math.max(15, Math.min(100, Math.round(100 - visualTrustDeductions)));
 
-      const consistencyAffectedShare = new Set(consistencyIssues.flatMap(i => i.affectedEntities || [])).size / totalScannedCount;
-      const inventoryAffectedShare = new Set(inventoryIssues.flatMap(i => i.affectedEntities || [])).size / totalScannedCount;
+      const consistencyAffectedShare = new Set(consistencyIssues.flatMap(i => safeEntities(i.affectedEntities))).size / totalScannedCount;
+      // Normalize inventory affected entities to product-level counts
+      // UNREALISTIC_INVENTORY uses variant IDs, so map them back to product IDs
+      const inventoryAffectedProducts = new Set();
+      inventoryIssues.forEach(i => {
+        safeEntities(i.affectedEntities).forEach(entityId => {
+          if (i.type === 'UNREALISTIC_INVENTORY') {
+            // Variant-level entity — find the parent product
+            const parentProduct = products.find(p => p.variants && p.variants.some(v => v.shopifyId === entityId));
+            if (parentProduct) inventoryAffectedProducts.add(parentProduct.shopifyId);
+          } else {
+            // Product-level entity (GHOST_LISTING, UNIFORM_INVENTORY)
+            inventoryAffectedProducts.add(entityId);
+          }
+        });
+      });
+      const inventoryAffectedShare = inventoryAffectedProducts.size / totalScannedCount;
 
       let consistencyDeduction = (consistencyAffectedShare * 40) + (inventoryAffectedShare * 30);
       if (consistencyIssues.some(i => i.type === 'HIGH_FRAGMENTATION')) consistencyDeduction += 15;
@@ -711,7 +741,7 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
 
       // Dynamic calculation of Section 6 scores
       scores.fulfillmentTrust = (() => {
-        const fIssues = issues.filter(i => ['DELIVERY_RISK_LOW', 'DELIVERY_RISK_MEDIUM', 'DELIVERY_RISK_HIGH', 'DELIVERY_RISK_CRITICAL'].includes(i.type));
+        const fIssues = issues.filter(i => ['DELIVERY_RISK_MEDIUM', 'DELIVERY_RISK_HIGH', 'DELIVERY_RISK_CRITICAL'].includes(i.type));
         const longDelNoCommIssues = issues.filter(i => i.type === 'LONG_DELIVERY_NO_COMM');
         
         let riskDeductionShare = 0;
@@ -719,7 +749,7 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
         for (const issue of fIssues) {
           const ev = typeof issue.evidence === 'string' ? JSON.parse(issue.evidence) : issue.evidence;
           const model = ev?.fulfillmentModel;
-          const affectedRatio = Math.min(1, (issue.affectedEntities || []).length / totalScannedCount);
+          const affectedRatio = Math.min(1, safeEntities(issue.affectedEntities).length / totalScannedCount);
           
           if (model === 'OVERSEAS_DROPSHIP') {
             riskDeductionShare += affectedRatio * 20;
@@ -734,7 +764,7 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
           }
         }
         
-        const longDelShare = new Set(longDelNoCommIssues.flatMap(i => i.affectedEntities || [])).size / totalScannedCount;
+        const longDelShare = new Set(longDelNoCommIssues.flatMap(i => safeEntities(i.affectedEntities))).size / totalScannedCount;
         riskDeductionShare += longDelShare * 20;
         
         return Math.max(20, Math.min(100, Math.round(100 - riskDeductionShare)));
@@ -746,7 +776,7 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
         const unrealisticInv = issues.filter(i => i.type === 'UNREALISTIC_INVENTORY');
         const uniqueUnrealisticProds = new Set();
         unrealisticInv.forEach(i => {
-          (i.affectedEntities || []).forEach(vid => {
+          safeEntities(i.affectedEntities).forEach(vid => {
             const prod = products.find(p => p.variants && p.variants.some(v => v.shopifyId === vid));
             if (prod) uniqueUnrealisticProds.add(prod.shopifyId);
           });
@@ -754,20 +784,20 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
         deduction += (uniqueUnrealisticProds.size / totalScannedCount) * 25;
         
         const supplierDesc = issues.filter(i => i.type === 'SUPPLIER_DESCRIPTION');
-        deduction += (new Set(supplierDesc.flatMap(i => i.affectedEntities || [])).size / totalScannedCount) * 30;
+        deduction += (new Set(supplierDesc.flatMap(i => safeEntities(i.affectedEntities))).size / totalScannedCount) * 30;
         
         const lowQualityImg = issues.filter(i => i.type === 'LOW_QUALITY_IMAGE');
-        deduction += (new Set(lowQualityImg.flatMap(i => i.affectedEntities || [])).size / totalScannedCount) * 20;
+        deduction += (new Set(lowQualityImg.flatMap(i => safeEntities(i.affectedEntities))).size / totalScannedCount) * 20;
         
         const duplicateImg = issues.filter(i => i.type === 'DUPLICATE_IMAGES');
-        deduction += (new Set(duplicateImg.flatMap(i => i.affectedEntities || [])).size / totalScannedCount) * 15;
+        deduction += (new Set(duplicateImg.flatMap(i => safeEntities(i.affectedEntities))).size / totalScannedCount) * 15;
         
         const dropshipDelivery = issues.filter(i => {
           const ev = typeof i.evidence === 'string' ? JSON.parse(i.evidence) : i.evidence;
-          return ['DELIVERY_RISK_LOW', 'DELIVERY_RISK_MEDIUM', 'DELIVERY_RISK_HIGH', 'DELIVERY_RISK_CRITICAL'].includes(i.type) && 
+          return ['DELIVERY_RISK_MEDIUM', 'DELIVERY_RISK_HIGH', 'DELIVERY_RISK_CRITICAL'].includes(i.type) && 
             ev?.fulfillmentModel === 'OVERSEAS_DROPSHIP';
         });
-        deduction += (new Set(dropshipDelivery.flatMap(i => i.affectedEntities || [])).size / totalScannedCount) * 30;
+        deduction += (new Set(dropshipDelivery.flatMap(i => safeEntities(i.affectedEntities))).size / totalScannedCount) * 30;
         
         if (issues.some(i => i.type === 'HIGH_FRAGMENTATION')) deduction += 15;
         
@@ -778,16 +808,16 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
         let deduction = 0;
         
         const dIssues = issues.filter(i => ['WEAK_DESCRIPTION', 'MISSING_DESCRIPTION', 'GENERIC_DESCRIPTION', 'REPETITIVE_GENERIC_DESCRIPTION'].includes(i.type));
-        deduction += (new Set(dIssues.flatMap(i => i.affectedEntities || [])).size / totalScannedCount) * 20;
+        deduction += (new Set(dIssues.flatMap(i => safeEntities(i.affectedEntities))).size / totalScannedCount) * 20;
         
         const tIssues = issues.filter(i => ['WEAK_PRODUCT_TITLE', 'INVALID_PRODUCT_TITLE', 'SERIAL_PRODUCT_TITLE', 'KEYWORD_STUFFED_TITLE'].includes(i.type));
-        deduction += (new Set(tIssues.flatMap(i => i.affectedEntities || [])).size / totalScannedCount) * 20;
+        deduction += (new Set(tIssues.flatMap(i => safeEntities(i.affectedEntities))).size / totalScannedCount) * 20;
         
         const ghostListings = issues.filter(i => i.type === 'GHOST_LISTING');
-        deduction += (new Set(ghostListings.flatMap(i => i.affectedEntities || [])).size / totalScannedCount) * 25;
+        deduction += (new Set(ghostListings.flatMap(i => safeEntities(i.affectedEntities))).size / totalScannedCount) * 25;
         
         const imageIssuesList = issues.filter(i => ['NO_PRODUCT_IMAGES', 'LOW_IMAGE_COUNT', 'BELOW_RECOMMENDED_RESOLUTION', 'POOR_PRESENTATION'].includes(i.type));
-        deduction += (new Set(imageIssuesList.flatMap(i => i.affectedEntities || [])).size / totalScannedCount) * 20;
+        deduction += (new Set(imageIssuesList.flatMap(i => safeEntities(i.affectedEntities))).size / totalScannedCount) * 20;
         
         return Math.max(20, Math.min(100, Math.round(100 - deduction)));
       })();
