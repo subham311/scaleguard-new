@@ -198,6 +198,8 @@ function getImpactBadgeStyle(impactVal) {
 const VERDICT_CONFIG = {
   "Ready to Scale: Proceed with ad spend": { bg: colors.successBg, border: "#00806020", color: colors.success, icon: "✦" },
   "Almost Ready: Fix remaining issues": { bg: colors.infoBg, border: "#1865C220", color: colors.info, icon: "◑" },
+  "Not Ready — Fix key issues before scaling ads": { bg: colors.warningBg, border: "#99520020", color: colors.warning, icon: "⚠" },
+  // Legacy key kept for backwards compatibility with any cached data
   "Not Ready: Do not run ads": { bg: colors.warningBg, border: "#99520020", color: colors.warning, icon: "⚠" },
   "High Risk: Review before scaling paid traffic": { bg: colors.criticalBg, border: "#AE2E2420", color: colors.critical, icon: "🚫" },
   "Waiting for Sync": { bg: "#FFFDF0", border: "#99520020", color: colors.warning, icon: "⟳" },

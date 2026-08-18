@@ -2241,8 +2241,21 @@ export async function processAuditRun(jobData) {
     const inconsistentPrimaryShare = new Set(allImageIssues.filter(i => i.type === 'INCONSISTENT_PRIMARY_IMAGE').flatMap(i => i.affectedEntities || [])).size / totalScannedCount;
     const inconsistentVisualsShare = new Set(allImageIssues.filter(i => i.type === 'INCONSISTENT_STORE_VISUALS').flatMap(i => i.affectedEntities || [])).size / totalScannedCount;
 
-    const visualTrustDeductions = (noImgShare * 50) + (lowImgShare * 25) + (dupImgShare * 20) + (lowQualImgShare * 25) + (poorPresShare * 15) + (excessiveImgShare * 10) + (limitedDiversityShare * 15) + (belowRecResShare * 10) + (inconsistentPrimaryShare * 20) + (inconsistentVisualsShare * 10);
-    const visualTrust = Math.max(15, Math.min(100, Math.round(100 - visualTrustDeductions)));
+    // Visual Trust deductions — each factor is weighted proportionally.
+    // Deductions are intentionally capped so that no single issue type can
+    // single-handedly collapse the score to the floor minimum.
+    const visualTrustDeductions =
+      Math.min(noImgShare * 40, 35) +           // No images: serious, capped at 35
+      Math.min(lowImgShare * 18, 18) +           // Too few images
+      Math.min(dupImgShare * 14, 12) +           // Duplicate images
+      Math.min(lowQualImgShare * 18, 18) +       // Low quality images
+      Math.min(poorPresShare * 10, 10) +          // Poor presentation
+      Math.min(excessiveImgShare * 6, 6) +        // Excessive image count
+      Math.min(limitedDiversityShare * 10, 10) +  // Limited diversity
+      Math.min(belowRecResShare * 7, 7) +         // Below recommended resolution
+      Math.min(inconsistentPrimaryShare * 14, 12) + // Inconsistent primary
+      Math.min(inconsistentVisualsShare * 7, 7);   // Inconsistent store visuals
+    const visualTrust = Math.max(20, Math.min(100, Math.round(100 - visualTrustDeductions)));
 
     const consistencyAffectedShare = new Set(allConsistencyIssues.flatMap(i => i.affectedEntities || [])).size / totalScannedCount;
     // Normalize inventory affected entities to product-level counts
@@ -2262,10 +2275,12 @@ export async function processAuditRun(jobData) {
     });
     const inventoryAffectedShare = inventoryAffectedProducts.size / totalScannedCount;
 
-    let consistencyDeduction = (consistencyAffectedShare * 40) + (inventoryAffectedShare * 30);
-    if (allConsistencyIssues.some(i => i.type === 'HIGH_FRAGMENTATION')) consistencyDeduction += 15;
+    // Consistency deductions — proportional to catalog share affected.
+    // Fragmentation adds a flat penalty but overall deduction is moderated.
+    let consistencyDeduction = Math.min(consistencyAffectedShare * 30, 35) + Math.min(inventoryAffectedShare * 22, 22);
+    if (allConsistencyIssues.some(i => i.type === 'HIGH_FRAGMENTATION')) consistencyDeduction += 10;
 
-    const catalogConsistency = Math.max(15, Math.min(100, Math.round(100 - consistencyDeduction)));
+    const catalogConsistency = Math.max(20, Math.min(100, Math.round(100 - consistencyDeduction)));
 
     const fulfillmentTrust = (() => {
       const fIssues = filteredIssues.filter(i => ['DELIVERY_RISK_MEDIUM', 'DELIVERY_RISK_HIGH', 'DELIVERY_RISK_CRITICAL'].includes(i.type));
@@ -2355,10 +2370,13 @@ export async function processAuditRun(jobData) {
       catalogMaintenance,
     };
 
-    const baseReadiness = (scores.productDataQuality * 0.4) + (scores.visualTrust * 0.4) + (scores.catalogConsistency * 0.2);
-    const performancePenalty = Math.round((perfRiskIssues.length / totalScannedCount) * 30);
-    let conversionReadiness = Math.round(Math.max(15, baseReadiness - performancePenalty));
-    if (criticalIssues.length > 0) conversionReadiness = Math.min(conversionReadiness, 45);
+    // Conversion Readiness: Weighted average of all health metrics + penalties.
+    // Visual Trust weight reduced slightly so image issues alone don't collapse readiness.
+    const baseReadiness = (scores.productDataQuality * 0.35) + (scores.visualTrust * 0.35) + (scores.catalogConsistency * 0.30);
+    const performancePenalty = Math.round((perfRiskIssues.length / totalScannedCount) * 25);
+    let conversionReadiness = Math.round(Math.max(20, baseReadiness - performancePenalty));
+    // If critical issues exist, cap readiness at 50 (significant risk, but not catastrophically harsh)
+    if (criticalIssues.length > 0) conversionReadiness = Math.min(conversionReadiness, 50);
     scores.conversionReadiness = conversionReadiness;
 
     // Trust Score calculation

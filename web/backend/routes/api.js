@@ -647,8 +647,21 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
       const inconsistentPrimaryShare = new Set(imageIssues.filter(i => i.type === 'INCONSISTENT_PRIMARY_IMAGE').flatMap(i => safeEntities(i.affectedEntities))).size / totalScannedCount;
       const inconsistentVisualsShare = new Set(imageIssues.filter(i => i.type === 'INCONSISTENT_STORE_VISUALS').flatMap(i => safeEntities(i.affectedEntities))).size / totalScannedCount;
 
-      const visualTrustDeductions = (noImgShare * 50) + (lowImgShare * 25) + (dupImgShare * 20) + (lowQualImgShare * 25) + (poorPresShare * 15) + (excessiveImgShare * 10) + (limitedDiversityShare * 15) + (belowRecResShare * 10) + (inconsistentPrimaryShare * 20) + (inconsistentVisualsShare * 10);
-      scores.visualTrust = Math.max(15, Math.min(100, Math.round(100 - visualTrustDeductions)));
+      // Visual Trust deductions — each factor is weighted proportionally.
+      // Deductions are intentionally capped so that no single issue type can
+      // single-handedly collapse the score to the floor minimum.
+      const visualTrustDeductions =
+        Math.min(noImgShare * 40, 35) +          // No images: serious, capped at 35
+        Math.min(lowImgShare * 18, 18) +          // Too few images
+        Math.min(dupImgShare * 14, 12) +          // Duplicate images
+        Math.min(lowQualImgShare * 18, 18) +      // Low quality images
+        Math.min(poorPresShare * 10, 10) +         // Poor presentation
+        Math.min(excessiveImgShare * 6, 6) +       // Excessive image count
+        Math.min(limitedDiversityShare * 10, 10) + // Limited diversity
+        Math.min(belowRecResShare * 7, 7) +        // Below recommended resolution
+        Math.min(inconsistentPrimaryShare * 14, 12) + // Inconsistent primary
+        Math.min(inconsistentVisualsShare * 7, 7);    // Inconsistent store visuals
+      scores.visualTrust = Math.max(20, Math.min(100, Math.round(100 - visualTrustDeductions)));
 
       const consistencyAffectedShare = new Set(consistencyIssues.flatMap(i => safeEntities(i.affectedEntities))).size / totalScannedCount;
       // Normalize inventory affected entities to product-level counts
@@ -668,10 +681,12 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
       });
       const inventoryAffectedShare = inventoryAffectedProducts.size / totalScannedCount;
 
-      let consistencyDeduction = (consistencyAffectedShare * 40) + (inventoryAffectedShare * 30);
-      if (consistencyIssues.some(i => i.type === 'HIGH_FRAGMENTATION')) consistencyDeduction += 15;
+      // Consistency deductions — proportional to catalog share affected.
+      // Fragmentation adds a flat penalty but overall deduction is moderated.
+      let consistencyDeduction = Math.min(consistencyAffectedShare * 30, 35) + Math.min(inventoryAffectedShare * 22, 22);
+      if (consistencyIssues.some(i => i.type === 'HIGH_FRAGMENTATION')) consistencyDeduction += 10;
 
-      scores.catalogConsistency = Math.max(15, Math.min(100, Math.round(100 - consistencyDeduction)));
+      scores.catalogConsistency = Math.max(20, Math.min(100, Math.round(100 - consistencyDeduction)));
 
       // Build "why" explanations for each score category
       const buildExplanation = (score, parts, goodMsg) =>
@@ -724,17 +739,18 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
         deadInventoryIssues.length > 0 && `${deadInventoryIssues.length} product(s) have high stock but zero sales`,
       ].filter(Boolean);
 
-      // Conversion Readiness: Weighted average + performance & critical penalties
-      const baseReadiness = (scores.productDataQuality * 0.4) + (scores.visualTrust * 0.4) + (scores.catalogConsistency * 0.2);
-      const performancePenalty = Math.round((perfRiskIssues.length / totalScannedCount) * 30);
+      // Conversion Readiness: Weighted average of all health metrics + penalties.
+      // Visual Trust weight reduced slightly so image issues alone don't collapse readiness.
+      const baseReadiness = (scores.productDataQuality * 0.35) + (scores.visualTrust * 0.35) + (scores.catalogConsistency * 0.30);
+      const performancePenalty = Math.round((perfRiskIssues.length / totalScannedCount) * 25);
       
-      let finalReadiness = Math.round(Math.max(15, baseReadiness - performancePenalty));
+      let finalReadiness = Math.round(Math.max(20, baseReadiness - performancePenalty));
 
-      // CRITICAL FAIL-CLOSED LOGIC: 
-      // If any critical issues exist (Pricing Errors, High Performance Quality Risk), 
-      // the score cannot exceed 45% (High Risk) regardless of other quality scores.
+      // CRITICAL FAIL-CLOSED LOGIC:
+      // If any critical issues exist (Pricing Errors, High Performance Quality Risk),
+      // the score is capped at 50 to reflect significant risk without being overly harsh.
       if (criticalIssues.length > 0) {
-        finalReadiness = Math.min(finalReadiness, 45);
+        finalReadiness = Math.min(finalReadiness, 50);
       }
       
       scores.conversionReadiness = finalReadiness;
@@ -1294,13 +1310,13 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
       verdict = 'Almost Ready: Fix remaining issues';
       storeRecommendation = 'Catalog is stable, but fix the flagged issues to maximize your conversion rate before heavy scaling.';
     } else if (mainScore >= 45) {
-      verdict = 'Not Ready: Do not run ads';
-      storeRecommendation = 'Do not run ads to the store until product descriptions and catalog quality are improved to prevent low ROAS.';
+      verdict = 'Not Ready — Fix key issues before scaling ads';
+      storeRecommendation = 'Product descriptions, catalog quality, and trust signals should be improved before increasing paid traffic to reduce the risk of low ROAS.';
     } else {
       verdict = 'High Risk: Review before scaling paid traffic';
       storeRecommendation = criticalIssuesExist 
         ? 'Critical errors detected (e.g. pricing or top-seller quality). Fix priority issues before increasing ad spend to protect your ROAS.'
-        : 'Immediate action required. Review and fix priority issues before scaling paid traffic to prevent wasted ad spend.';
+        : 'Significant catalog and trust issues detected. Work through the priority fixes below before scaling paid traffic to prevent wasted ad spend.';
     }
 
     // ── Store Readiness Narrative ─────────────────────────────────────────────
