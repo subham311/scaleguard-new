@@ -15,12 +15,28 @@ export default function HomePage() {
   useEffect(() => {
     if (!isLoading && data?.subscription) {
       const status = data.subscription.status;
-      if (status === "ACTIVE" || status === "PENDING") {
-        // User is registered, redirect to Dashboard
+      const hasCharge = Boolean(data.subscription.chargeId);
+      if (status === "ACTIVE" || (status === "PENDING" && hasCharge)) {
+        // User is registered with an active/pending charge, redirect to Dashboard
         navigate("/Dashboard", { replace: true });
       }
     }
   }, [data, isLoading, navigate]);
+
+  // Determine trial status for dynamic onboarding wording
+  const trialStatus = data?.subscription?.trialStatus || (data?.trialInfo?.isTrial ? 'REMAINING' : 'NEVER_USED');
+  const daysRemaining = data?.subscription?.trialDaysRemaining || data?.trialInfo?.daysRemaining || 30;
+
+  let auditButtonText = "Start Free Trial & Run First Audit";
+  let trialHelperText = "30-day free trial included. You won’t be charged today.";
+
+  if (trialStatus === 'REMAINING') {
+    auditButtonText = "Continue Free Trial & Run First Audit";
+    trialHelperText = `You have ${daysRemaining} trial day${daysRemaining === 1 ? '' : 's'} remaining before billing starts.`;
+  } else if (trialStatus === 'EXPIRED') {
+    auditButtonText = "Choose Plan & Start First Audit";
+    trialHelperText = "This store has already used its free trial. Billing begins upon plan approval.";
+  }
 
   if (isLoading) {
     return (
@@ -86,8 +102,13 @@ export default function HomePage() {
             </Text>
           </div>
           <Button size="large" primary onClick={() => navigate("/Pricing")}>
-            Run Your First Audit
+            {auditButtonText}
           </Button>
+          <div style={{ marginTop: "12px" }}>
+            <Text as="p" variant="bodySm" tone="subdued">
+              {trialHelperText}
+            </Text>
+          </div>
         </div>
 
         {/* Features Section */}

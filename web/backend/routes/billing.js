@@ -193,7 +193,14 @@ router.get('/subscription', authenticateShop, async (req, res) => {
     });
 
     if (!subscription) {
-      return res.status(404).json({ error: 'No subscription found' });
+      return res.json({
+        status: 'NONE',
+        plan: null,
+        chargeId: null,
+        trialStatus: 'NEVER_USED',
+        trialDaysRemaining: 30,
+        hasUsedTrial: false,
+      });
     }
 
     // Verify actual charge status from Shopify API
@@ -343,12 +350,31 @@ router.get('/subscription', authenticateShop, async (req, res) => {
       }
     }
 
-    // Return subscription with verified status
+    // Compute dynamic trial status and remaining trial days
+    let trialStatus = 'NEVER_USED';
+    let trialDaysRemaining = 30;
+
+    if (subscription.trialEndsAt) {
+      const endsAt = new Date(subscription.trialEndsAt);
+      const now = new Date();
+      if (endsAt > now) {
+        trialStatus = 'REMAINING';
+        trialDaysRemaining = Math.max(1, Math.ceil((endsAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
+      } else {
+        trialStatus = 'EXPIRED';
+        trialDaysRemaining = 0;
+      }
+    }
+
+    // Return subscription with verified status and trial metadata
     // The UI should only show the plan when status is ACTIVE
     res.json({
       ...subscription,
       status: verifiedStatus,
       chargeId: verifiedChargeId || subscription.chargeId,
+      trialStatus,
+      trialDaysRemaining,
+      hasUsedTrial: trialStatus === 'EXPIRED',
     });
   } catch (error) {
     console.error('Get subscription error:', error);
@@ -493,18 +519,32 @@ async function handleCreateSubscription(req, res) {
       }
     `;
 
-    // Check if the store has already used a free trial
+    // Check trial status & calculate dynamic trial days
     const existingSub = await prisma.subscription.findUnique({
       where: { shopId: req.shop.id }
     });
 
-    const hasUsedTrial = existingSub && existingSub.trialEndsAt !== null;
-
     let trialDays = null;
+    let newTrialEndsAt = null;
     let discount = null;
 
-    if (!hasUsedTrial) {
-      trialDays = 30; // 30-day free trial for all plans
+    if (!existingSub || !existingSub.trialEndsAt) {
+      // 1. Brand new store: full 30-day free trial
+      trialDays = 30;
+      newTrialEndsAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    } else {
+      const existingEndsAt = new Date(existingSub.trialEndsAt);
+      const now = new Date();
+      if (existingEndsAt > now) {
+        // 2. Reinstalling store with remaining trial days: preserve exact remaining days
+        const remainingDays = Math.max(1, Math.ceil((existingEndsAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
+        trialDays = remainingDays;
+        newTrialEndsAt = existingEndsAt;
+      } else {
+        // 3. Store already used full free trial: no trial days, standard billing begins upon approval
+        trialDays = null;
+        newTrialEndsAt = existingEndsAt; // Preserve past expiration date to prevent trial re-use
+      }
     }
 
     const variables = {
@@ -568,10 +608,7 @@ async function handleCreateSubscription(req, res) {
     });
 
     // Persist subscription in database
-    const trialEndsAt =
-      trialDays && trialDays > 0
-        ? new Date(Date.now() + trialDays * 24 * 60 * 60 * 1000)
-        : null;
+    const trialEndsAt = newTrialEndsAt;
 
     try {
       const existing = await prisma.subscription.findUnique({

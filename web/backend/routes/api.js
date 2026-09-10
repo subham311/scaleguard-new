@@ -515,9 +515,15 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
       ? Math.max(0, Math.ceil((new Date(trialEndsAt) - new Date()) / (1000 * 60 * 60 * 24)))
       : 0;
 
+    let trialStatus = 'NEVER_USED';
+    if (trialEndsAt) {
+      trialStatus = isTrial ? 'REMAINING' : 'EXPIRED';
+    }
+
     const trialInfo = isTrial
       ? {
           isTrial: true,
+          trialStatus,
           trialEndsAt,
           daysRemaining: trialDaysRemaining,
           trialProductCap: isExtendedDomain ? fullProductLimit : dashTrialCap,
@@ -1472,6 +1478,20 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
       } : null,
     };
 
+    const enrichedSubscription = subscription ? {
+      ...subscription,
+      trialStatus,
+      trialDaysRemaining: isTrial ? trialDaysRemaining : (trialEndsAt ? 0 : 30),
+      hasUsedTrial: Boolean(trialEndsAt && !isTrial),
+    } : {
+      status: 'NONE',
+      plan: null,
+      chargeId: null,
+      trialStatus: 'NEVER_USED',
+      trialDaysRemaining: 30,
+      hasUsedTrial: false,
+    };
+
     res.json({
       shop: {
         id: shop.id,
@@ -1479,7 +1499,7 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
         dataCollectedAt: shop.dataCollectedAt,
         totalProductsCount: shop.totalProductsCount || 0,
       },
-      subscription: subscription || null,
+      subscription: enrichedSubscription,
       trialInfo,
       verdict: latestAudit ? verdict : 'Waiting for Sync',
       storeRecommendation: latestAudit ? storeRecommendation : 'Initial audit required to determine readiness.',

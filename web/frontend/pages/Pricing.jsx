@@ -109,18 +109,37 @@ export default function Pricing() {
   }
 
   // Get current active plan name mapped to capital case equivalent of UI representation (e.g. LIGHT -> Light)
-  const activePlanKey = subscription?.status === 'ACTIVE' || subscription?.status === 'PENDING'
+  const isSubscribed = subscription?.status === 'ACTIVE' || (subscription?.status === 'PENDING' && Boolean(subscription?.chargeId));
+  const activePlanKey = isSubscribed
     ? (subscription?.plan?.charAt(0).toUpperCase() + subscription?.plan?.slice(1).toLowerCase())
     : null;
   const currentRank = activePlanKey ? PLAN_LIMITS_META[activePlanKey]?.rank || 0 : 0;
 
+  const trialStatus = subscription?.trialStatus || 'NEVER_USED';
+  const daysRemaining = subscription?.trialDaysRemaining ?? (trialStatus === 'NEVER_USED' ? 30 : 0);
+
+  // Dynamic titles and subtitles based on trial status and active plan
+  let pageTitle = "Start Your 30-Day Free Trial";
+  let pageSubtitle = "Choose a plan to start your first audit. You won’t be charged during the 30-day free trial. Each plan controls how many products and images ScaleGuard analyzes.";
+
+  if (currentRank > 0) {
+    pageTitle = "Commercial Risk Intelligence Plans";
+    pageSubtitle = "Each plan controls how many products and images ScaleGuard analyzes per audit cycle.";
+  } else if (trialStatus === 'REMAINING') {
+    pageTitle = "Continue Your Free Trial";
+    pageSubtitle = `Choose a plan to start your audit. You have ${daysRemaining} trial day${daysRemaining === 1 ? '' : 's'} remaining before billing starts. Each plan controls how many products and images ScaleGuard analyzes.`;
+  } else if (trialStatus === 'EXPIRED') {
+    pageTitle = "Choose a Plan to Continue";
+    pageSubtitle = "This store has already used its free trial. Billing will begin when you approve a plan. Each plan controls how many products and images ScaleGuard analyzes.";
+  }
+
   return (
     <Page>
       <div style={{ textAlign: "center", marginTop: "40px", marginBottom: "48px" }}>
-        <Text as="h1" variant="heading3xl">Commercial Risk Intelligence Plans</Text>
-        <div style={{ marginTop: "16px", maxWidth: "600px", margin: "16px auto 0" }}>
+        <Text as="h1" variant="heading3xl">{pageTitle}</Text>
+        <div style={{ marginTop: "16px", maxWidth: "650px", margin: "16px auto 0" }}>
           <Text as="p" variant="bodyLg" tone="subdued">
-            Each plan controls how many products and images ScaleGuard analyzes per audit cycle.
+            {pageSubtitle}
           </Text>
         </div>
       </div>
@@ -151,6 +170,14 @@ export default function Pricing() {
             } else {
               buttonText = "Current Plan";
               isCurrentPlan = true;
+            }
+          } else {
+            if (trialStatus === 'NEVER_USED') {
+              buttonText = `Start ${plan.name} Trial`;
+            } else if (trialStatus === 'REMAINING') {
+              buttonText = `Continue ${plan.name} Trial`;
+            } else {
+              buttonText = `Select ${plan.name}`;
             }
           }
 
@@ -209,7 +236,24 @@ export default function Pricing() {
             <div style={{ margin: "24px 0" }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                 <Text as="h3" variant="heading3xl">${plan.price} <span style={{ fontSize: "16px", fontWeight: "normal", color: "var(--p-color-text-subdued)" }}>/mo</span></Text>
-                <Text as="p" variant="bodySm" tone="success">30-day free trial included</Text>
+                {currentRank > 0 ? (
+                  <Text as="p" variant="bodySm" tone="subdued">{isCurrentPlan ? 'Current active plan' : 'Standard monthly billing'}</Text>
+                ) : trialStatus === 'NEVER_USED' ? (
+                  <div>
+                    <Text as="p" variant="bodySm" tone="success">30-day free trial included</Text>
+                    <Text as="p" variant="bodyXs" tone="subdued">You won’t be charged during the trial.</Text>
+                  </div>
+                ) : trialStatus === 'REMAINING' ? (
+                  <div>
+                    <Text as="p" variant="bodySm" tone="success">{daysRemaining} trial day{daysRemaining === 1 ? '' : 's'} remaining</Text>
+                    <Text as="p" variant="bodyXs" tone="subdued">You have {daysRemaining} trial day{daysRemaining === 1 ? '' : 's'} before billing starts.</Text>
+                  </div>
+                ) : (
+                  <div>
+                    <Text as="p" variant="bodySm" tone="subdued">Free trial already used</Text>
+                    <Text as="p" variant="bodyXs" tone="subdued">Billing begins when you approve a plan.</Text>
+                  </div>
+                )}
               </div>
             </div>
             <Button 
