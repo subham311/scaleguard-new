@@ -111,6 +111,37 @@ export default function HomePage() {
           </div>
         </div>
 
+        {/* Analysis-Only Assurance */}
+        <div style={{
+          backgroundColor: "#f6f8fa",
+          borderRadius: "12px",
+          border: "1px solid #d0d7de",
+          padding: "20px 24px",
+          marginBottom: "32px",
+          display: "flex",
+          alignItems: "flex-start",
+          gap: "16px"
+        }}>
+          <div style={{
+            fontSize: "24px",
+            lineHeight: 1,
+            flexShrink: 0,
+            marginTop: "2px"
+          }}>
+            🛡️
+          </div>
+          <div>
+            <div style={{ marginBottom: "6px" }}>
+              <Text as="h3" variant="headingSm" fontWeight="bold">
+                100% Analysis-Only — Zero Store Modifications
+              </Text>
+            </div>
+            <Text as="p" variant="bodySm" tone="subdued">
+              <strong>ScaleGuard is analysis-only.</strong> It does not change orders, products, prices, descriptions, images, theme, layout, customers or settings. Orders access is used only to understand order activity, fulfilment/shipping patterns and delivery-related signals to protect your ad spend.
+            </Text>
+          </div>
+        </div>
+
         {/* Features Section */}
         <div style={{
           display: "flex",

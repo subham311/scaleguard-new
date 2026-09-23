@@ -141,7 +141,7 @@ export default function HelpCenter() {
     {
       id: 1,
       title: "i. Install ScaleGuard",
-      description: "App successfully installed and connected to your store.",
+      description: "App connected to your store. ScaleGuard is 100% analysis-only: it never modifies your orders, products, prices, images, theme, or settings. Read-only Orders access is used strictly to evaluate fulfilment and delivery signals.",
       completed: true,
       actionLabel: null,
       onAction: null
@@ -486,6 +486,10 @@ export default function HelpCenter() {
                   <Text as="h2" variant="headingLg">Frequently Asked Questions (FAQ)</Text>
                   <div style={{ display: "flex", flexDirection: "column", marginTop: "8px" }}>
                     <FAQRow 
+                      question="Why does ScaleGuard request Orders read permission?" 
+                      answer="ScaleGuard is strictly analysis-only. It never modifies orders, products, prices, descriptions, images, theme, layout, customers, or settings. Orders read access is used exclusively to evaluate order activity, fulfilment turnaround, and shipping/delivery-related signals so we can alert you to delivery risks before you scale ad spend."
+                    />
+                    <FAQRow 
                       question="What is the Store Readiness Verdict?" 
                       answer="The verdict is ScaleGuard's final readiness grade for your store before starting paid marketing. It is calculated based on 4 health categories: Data Quality, Visual Trust, Catalog Consistency, and Conversion Readiness. Scores range from 0 to 100, where >=85 means your store is Ready to Scale."
                     />
@@ -502,8 +506,8 @@ export default function HelpCenter() {
                       answer="Ensure you use unique images for distinct product variants, or edit supplier-provided graphics to reflect your brand's unique styles. Curate large galleries down to the best 6-12 high-impact visual resources."
                     />
                     <FAQRow 
-                      question="How is the Dropshipping Perception Score calculated?" 
-                      answer="It evaluates specific patterns that reveal dropshipping models, such as standard AliExpress/Temu supplier templates, pixelated supplier images, uniform inventory counts, and repetitive generic descriptions."
+                      question="How is the Dropshipping & Catalog Perception Score calculated?" 
+                      answer="It evaluates customer perception signals such as generic supplier templates, unbranded or stock imagery, uniform inventory patterns across unlinked items, and repetitive descriptions. For custom, handmade, or made-to-order stores with uniform stock, these patterns can be easily overridden from your dashboard."
                     />
                   </div>
                 </VerticalStack>

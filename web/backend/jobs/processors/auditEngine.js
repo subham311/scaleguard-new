@@ -275,34 +275,106 @@ export function isApparelOrFootwear(product) {
   const tags = (product.tags || '').toLowerCase();
   const title = (product.title || '').toLowerCase();
 
+  // Explicit non-apparel exclusions (e.g. hardware, houseware, signs, plaques, decor, furniture, etc.)
+  const nonApparelExclusions = [
+    'hardware', 'houseware', 'tableware', 'cookware', 'glassware', 'metalware', 'kitchenware',
+    'sign', 'signs', 'plaque', 'plaques', 'house number', 'house numbers', 'decor', 'furniture',
+    'tool', 'tools', 'craft', 'crafts', 'ornament', 'ornaments', 'print', 'prints', 'poster',
+    'artwork', 'painting', 'fixture', 'fitting', 'shelf', 'shelving', 'bracket', 'metal art', 'wall art'
+  ];
+
+  const hasNonApparelExclusion = (text) => {
+    if (!text) return false;
+    return nonApparelExclusions.some(term => new RegExp(`\\b${term}\\b`, 'i').test(text));
+  };
+
+  if (hasNonApparelExclusion(type) || hasNonApparelExclusion(tags) || hasNonApparelExclusion(title)) {
+    return false;
+  }
+
   const apparelFootwearTerms = [
     'apparel', 'clothing', 'shirt', 't-shirt', 'tshirt', 'pant', 'jeans', 'trousers',
     'dress', 'skirt', 'jacket', 'coat', 'hoodie', 'sweater', 'cardigan',
     'socks', 'footwear', 'shoe', 'sneaker', 'boot', 'sandal', 'slipper', 'heel',
     'vest', 'suit', 'blazer', 'underwear', 'pajama', 'swimwear', 'bikini',
-    'activewear', 'joggers', 'leggings', 'tights', 'wear', 'ropa', 'camisa',
-    'camiseta', 'vestido', 'pantalón', 'pantalon', 'chaqueta', 'abrigo', 'sudadera',
-    'calcetines', 'calzado', 'zapato', 'zapatilla', 'bota', 'sandalia', 'traje',
-    'interior', 'pijama', 'tallas'
+    'activewear', 'outerwear', 'sleepwear', 'sportswear', 'menswear', 'womenswear',
+    'kidswear', 'casualwear', 'knitwear', 'joggers', 'leggings', 'tights',
+    'ropa', 'camisa', 'camiseta', 'vestido', 'pantalón', 'pantalon', 'chaqueta',
+    'abrigo', 'sudadera', 'calcetines', 'calzado', 'zapato', 'zapatilla', 'bota',
+    'sandalia', 'traje', 'interior', 'pijama'
   ];
 
-  if (type && apparelFootwearTerms.some(term => type.includes(term))) {
+  // Note: Only match whole word 'wear' or explicit compound terms to avoid matching 'hardware'
+  const isWholeWordWear = (text) => /\bwear\b/i.test(text);
+
+  if (type && (apparelFootwearTerms.some(term => type.includes(term)) || isWholeWordWear(type))) {
     return true;
   }
 
   if (tags) {
     const tagList = tags.split(/[\s,]+/).filter(Boolean);
-    if (tagList.some(tag => apparelFootwearTerms.some(term => tag.includes(term)))) {
+    if (tagList.some(tag => apparelFootwearTerms.some(term => tag.includes(term)) || isWholeWordWear(tag))) {
       return true;
     }
   }
 
   const words = title.split(/\s+/).filter(Boolean);
-  if (words.some(word => apparelFootwearTerms.some(term => word === term || (word.length > 3 && word.includes(term))))) {
+  if (words.some(word => apparelFootwearTerms.some(term => word === term || (word.length > 3 && word.includes(term))) || isWholeWordWear(word))) {
     return true;
   }
 
   return false;
+}
+
+export function isDimensionSensitiveProduct(product) {
+  const type = (product.productType || '').toLowerCase();
+  const tags = (product.tags || '').toLowerCase();
+  const title = (product.title || '').toLowerCase();
+
+  const dimensionTerms = [
+    'sign', 'signs', 'plaque', 'plaques', 'house number', 'house numbers',
+    'decor', 'decoration', 'furniture', 'hardware', 'table', 'chair', 'desk',
+    'mirror', 'mirrors', 'frame', 'frames', 'rug', 'rugs', 'carpet', 'curtain', 'curtains',
+    'shelf', 'shelves', 'shelving', 'lighting', 'lamp', 'pendant',
+    'fixture', 'bracket', 'canvas', 'poster', 'print', 'prints', 'artwork', 'clock',
+    'cushion', 'cushions', 'pillow', 'blanket', 'mat', 'doormat', 'planter', 'pot', 'vase',
+    'sculpture', 'metal art', 'wall art', 'panel', 'letterbox', 'mailbox'
+  ];
+
+  const hasDimensionTerm = (text) => {
+    if (!text) return false;
+    return dimensionTerms.some(term => new RegExp(`\\b${term}\\b`, 'i').test(text));
+  };
+
+  if (hasDimensionTerm(type) || hasDimensionTerm(tags) || hasDimensionTerm(title)) {
+    return true;
+  }
+}
+
+export function hasProductDimensions(product) {
+  const desc = (product.description || '').toLowerCase();
+  
+  // Regex pattern for common dimension notations: e.g. 10x10, 12 x 12, 15cm, 6 inch, 8", 200mm, etc.
+  const dimensionRegex = /\b\d+(\.\d+)?\s*(cm|mm|m|in|inch|inches|\"|x\s*\d+|ft)\b/i;
+  if (dimensionRegex.test(desc)) {
+    return true;
+  }
+
+  const dimensionTerms = [
+    'dimension', 'dimensions', 'measurement', 'measurements', 'height', 'width',
+    'depth', 'length', 'thickness', 'diameter', 'gauge', 'wide', 'high', 'deep', 'long',
+    'size:', 'sizing:', 'medidas', 'dimensiones', 'ancho', 'alto', 'largo', 'grosor',
+    'abmessungen', 'maße', 'breite', 'höhe', 'tiefe'
+  ];
+
+  let matches = 0;
+  for (const term of dimensionTerms) {
+    if (desc.includes(term)) {
+      matches++;
+    }
+  }
+
+  return matches >= 2;
 }
 
 export function hasSizeGuide(product) {
@@ -1263,7 +1335,7 @@ async function calculateDescriptionQualityScore(html, title, lang = 'en', option
 function buildScoreExplanations(issues, scores) {
   const pricingIssues = issues.filter(i => ['PRICING_ERROR', 'ABSOLUTE_PRICING_ANOMALY'].includes(i.type));
   const titleIssues = issues.filter(i => ['INVALID_PRODUCT_TITLE', 'WEAK_PRODUCT_TITLE', 'SERIAL_PRODUCT_TITLE', 'KEYWORD_STUFFED_TITLE'].includes(i.type));
-  const descIssues = issues.filter(i => ['MISSING_DESCRIPTION', 'WEAK_DESCRIPTION', 'GENERIC_DESCRIPTION', 'SPEC_DUMP_DESCRIPTION', 'SUPPLIER_DESCRIPTION', 'REPETITIVE_GENERIC_DESCRIPTION', 'MISSING_SIZE_GUIDE', 'MISSING_PRODUCT_SPECIFICATION'].includes(i.type));
+  const descIssues = issues.filter(i => ['MISSING_DESCRIPTION', 'WEAK_DESCRIPTION', 'GENERIC_DESCRIPTION', 'SPEC_DUMP_DESCRIPTION', 'SUPPLIER_DESCRIPTION', 'REPETITIVE_GENERIC_DESCRIPTION', 'MISSING_SIZE_GUIDE', 'MISSING_PRODUCT_SPECIFICATION', 'MISSING_PRODUCT_DIMENSIONS'].includes(i.type));
   const imageIssues = issues.filter(i => ['NO_PRODUCT_IMAGES', 'LOW_IMAGE_COUNT', 'EXCESSIVE_IMAGE_COUNT', 'DUPLICATE_IMAGES', 'LIMITED_IMAGE_DIVERSITY', 'LOW_QUALITY_IMAGE', 'BELOW_RECOMMENDED_RESOLUTION', 'POOR_PRESENTATION', 'INCONSISTENT_PRIMARY_IMAGE', 'INCONSISTENT_STORE_VISUALS'].includes(i.type));
   const consistencyIssues = issues.filter(i =>
     ['CATALOG_INCONSISTENCY', 'HIGH_FRAGMENTATION', 'INCONSISTENT_PRICE_POSITIONING', 'VARIANT_PRICE_GAP', 'COLLECTION_PRICE_OUTLIER', 'INCOMPLETE_ORGANIZATION', 'MISSING_RECOMMENDED_METAFIELDS'].includes(i.type)
@@ -1287,12 +1359,14 @@ function buildScoreExplanations(issues, scores) {
       const suppliers = descIssues.filter(i => i.type === 'SUPPLIER_DESCRIPTION').length;
       const repetitive = descIssues.filter(i => i.type === 'REPETITIVE_GENERIC_DESCRIPTION').length;
       const genericOrWeak = descIssues.filter(i => ['MISSING_DESCRIPTION', 'WEAK_DESCRIPTION', 'GENERIC_DESCRIPTION'].includes(i.type)).length;
+      const missingDimensions = descIssues.filter(i => i.type === 'MISSING_PRODUCT_DIMENSIONS').length;
       
       const descParts = [];
       if (genericOrWeak > 0) descParts.push(`${genericOrWeak} product(s) have missing or insufficient descriptions`);
       if (specDumps > 0) descParts.push(`${specDumps} product(s) have spec-dump descriptions`);
       if (suppliers > 0) descParts.push(`${suppliers} product(s) have supplier-style descriptions`);
       if (repetitive > 0) descParts.push(`${repetitive} product(s) have repetitive generic descriptions`);
+      if (missingDimensions > 0) descParts.push(`${missingDimensions} product(s) are missing product dimensions or measurements`);
       
       if (descParts.length > 0) {
         parts.push(descParts.join(', and '));
@@ -1679,6 +1753,25 @@ export async function processAuditRun(jobData) {
             }
           });
         }
+      } else if (isDimensionSensitiveProduct(product)) {
+        if (!hasProductDimensions(product)) {
+          productHasSpecIssue = true;
+          issues.push({
+            auditRunId: auditRun.id,
+            type: 'MISSING_PRODUCT_DIMENSIONS',
+            severity: 'MEDIUM',
+            category: 'CONTENT',
+            affectedEntities: [product.shopifyId],
+            evidence: {
+              title: product.title,
+              productType: product.productType || '',
+              tags: product.tags || '',
+              reason: 'Non-fashion product (signs, plaques, house numbers, decor, furniture, hardware) is missing dimensions or measurements.',
+              businessImpact: 'Customers may need product dimensions, material, finish, fixing method or customisation details before ordering.',
+              confidence: 'HIGH',
+            }
+          });
+        }
       }
 
       if (!hasProductSpecifications(product)) {
@@ -1840,16 +1933,16 @@ export async function processAuditRun(jobData) {
           issues.push({
             auditRunId: auditRun.id,
             type: 'UNIFORM_INVENTORY',
-            severity: 'HIGH',
+            severity: 'MEDIUM',
             category: 'INVENTORY',
             affectedEntities: [product.shopifyId],
             evidence: {
               title: product.title,
               variantCount,
               uniformValue: inventoryValues[0],
-              reason: `All variants share identical inventory values. This may indicate supplier-fed inventory feeds, bulk imports, or inventory levels that have not been reviewed manually.`,
-              businessImpact: 'May indicate supplier-fed catalog. Review inventory to avoid low-trust dropshipping perception.',
-              confidence: 'HIGH',
+              reason: 'Similar stock levels were detected across multiple products. This may be normal for small or custom stores, but should be reviewed if the catalog is intended to look actively managed.',
+              businessImpact: 'Uniform inventory pattern detected — review if intentional. Automated supplier feeds often hold identical stock across variants, which can lower buyer urgency.',
+              confidence: 'MEDIUM',
             },
           });
         }
@@ -2200,7 +2293,7 @@ export async function processAuditRun(jobData) {
     // ── 8. CALCULATE SCORES ────────────────────────────────────────────────
     const pricingIssues       = filteredIssues.filter(i => ['PRICING_ERROR', 'ABSOLUTE_PRICING_ANOMALY'].includes(i.type));
     const titleIssues         = filteredIssues.filter(i => ['INVALID_PRODUCT_TITLE', 'WEAK_PRODUCT_TITLE', 'SERIAL_PRODUCT_TITLE', 'KEYWORD_STUFFED_TITLE'].includes(i.type));
-    const descIssues          = filteredIssues.filter(i => ['MISSING_DESCRIPTION', 'WEAK_DESCRIPTION', 'GENERIC_DESCRIPTION', 'SPEC_DUMP_DESCRIPTION', 'SUPPLIER_DESCRIPTION', 'REPETITIVE_GENERIC_DESCRIPTION', 'MISSING_SIZE_GUIDE', 'MISSING_PRODUCT_SPECIFICATION'].includes(i.type));
+    const descIssues          = filteredIssues.filter(i => ['MISSING_DESCRIPTION', 'WEAK_DESCRIPTION', 'GENERIC_DESCRIPTION', 'SPEC_DUMP_DESCRIPTION', 'SUPPLIER_DESCRIPTION', 'REPETITIVE_GENERIC_DESCRIPTION', 'MISSING_SIZE_GUIDE', 'MISSING_PRODUCT_SPECIFICATION', 'MISSING_PRODUCT_DIMENSIONS'].includes(i.type));
     const allImageIssues      = filteredIssues.filter(i => ['NO_PRODUCT_IMAGES', 'LOW_IMAGE_COUNT', 'EXCESSIVE_IMAGE_COUNT', 'DUPLICATE_IMAGES', 'LIMITED_IMAGE_DIVERSITY', 'LOW_QUALITY_IMAGE', 'BELOW_RECOMMENDED_RESOLUTION', 'POOR_PRESENTATION', 'INCONSISTENT_PRIMARY_IMAGE', 'INCONSISTENT_STORE_VISUALS'].includes(i.type));
     const noImageIssues       = filteredIssues.filter(i => i.type === 'NO_PRODUCT_IMAGES');
     const allConsistencyIssues = filteredIssues.filter(i =>
@@ -2424,6 +2517,20 @@ export async function processAuditRun(jobData) {
         classification = 'High Risk';
       }
       
+      // Consistency check: Store Trust Status must align with overall readiness
+      // If store is Not Ready (<70) or trustScore < 70, cap status so it cannot show "Excellent"
+      const cR = scores.conversionReadiness;
+      if (cR < 70 || trustVal < 70) {
+        if (classification === 'Excellent') {
+          classification = 'Good';
+        }
+      }
+      if (cR < 50 || trustVal < 50) {
+        if (classification === 'Good' || classification === 'Excellent') {
+          classification = 'Fair';
+        }
+      }
+
       // Fail-safe override:
       if (trustVal < 40 || fulfillVal < 40) {
         if (classification === 'Excellent' || classification === 'Good' || classification === 'Fair') {

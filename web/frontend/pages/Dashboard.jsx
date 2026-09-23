@@ -432,6 +432,48 @@ export default function Dashboard() {
           </div>
         </div>
         
+        {/* ── Product Scan Limits Notice (Partial Catalog Audit) ── */}
+        {(data?.planDetails?.isPartialScan || ((data?.shop?.totalProductsCount || 0) > (data?.planDetails?.productsAnalyzed || 0))) && (
+          <div style={{
+            background: "#F0F7FF",
+            border: "1px solid #1865C230",
+            borderRadius: radius.md,
+            padding: "12px 18px",
+            marginBottom: "16px",
+            boxShadow: shadow.card,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: "12px"
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <span style={{ fontSize: "16px" }}>ℹ️</span>
+              <span style={{ fontSize: "13px", color: colors.textPrimary, fontWeight: 500 }}>
+                <strong>{data.planDetails.productsAnalyzed} of {data.shop?.totalProductsCount || data.planDetails.totalCatalogProducts} products scanned under {data.planDetails.plan} {data.trialInfo?.isTrial ? 'Trial' : 'Plan'}.</strong> Upgrade to Growth or Pro to scan more products.
+              </span>
+            </div>
+            <button
+              onClick={() => navigate("/Pricing")}
+              style={{
+                background: colors.info,
+                color: "#ffffff",
+                border: "none",
+                borderRadius: "6px",
+                padding: "6px 14px",
+                fontSize: "12px",
+                fontWeight: 600,
+                cursor: "pointer",
+                transition: "opacity 0.2s ease"
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.9")}
+              onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+            >
+              Upgrade Plan
+            </button>
+          </div>
+        )}
+
         {/* ── Plan Details Banner ── */}
         {data?.planDetails && (
           <div style={{
@@ -455,7 +497,15 @@ export default function Dashboard() {
               <div style={{ display: "flex", flexDirection: "column" }}>
                 <span style={{ fontSize: "10px", color: colors.textSecondary, textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.03em" }}>Catalog Scan Status</span>
                 <span style={{ fontSize: "13px", fontWeight: 500, color: colors.textPrimary, marginTop: "2px" }}>
-                  Scanned: <strong style={{ fontWeight: 700 }}>{data?.shop?.totalProductsCount || data.planDetails.productsAnalyzed}</strong> products | Monitored: <strong style={{ fontWeight: 700 }}>{data.planDetails.productsAnalyzed}</strong> of {data.planDetails.maxProducts}
+                  {(data?.planDetails?.isPartialScan || ((data?.shop?.totalProductsCount || 0) > (data?.planDetails?.productsAnalyzed || 0))) ? (
+                    <>
+                      Scanned: <strong style={{ fontWeight: 700 }}>{data.planDetails.productsAnalyzed} of {data?.shop?.totalProductsCount || data.planDetails.totalCatalogProducts}</strong> products ({data.planDetails.plan} {data?.trialInfo?.isTrial ? 'Trial' : 'Plan'} limit)
+                    </>
+                  ) : (
+                    <>
+                      Scanned: <strong style={{ fontWeight: 700 }}>{data.planDetails.productsAnalyzed}</strong> products (Full catalog)
+                    </>
+                  )}
                 </span>
               </div>
               <div style={{ width: "1px", height: "24px", background: colors.border }} />
@@ -802,7 +852,10 @@ export default function Dashboard() {
                 <div>
                   <div style={{ fontSize: "16px", fontWeight: 700, color: colors.textPrimary }}>Store Trust Summary</div>
                   <div style={{ fontSize: "13px", color: colors.textSecondary, marginTop: "2px" }}>
-                    Overall customer trust assessment and brand credibility signals.
+                    Evaluates supplier authenticity, fulfillment reliability, and brand credibility signals.
+                  </div>
+                  <div style={{ fontSize: "12px", color: colors.textSecondary, marginTop: "4px", lineHeight: "1.4", fontStyle: "italic" }}>
+                    Note: A store with strong trust signals may still be &quot;Not Ready&quot; to scale paid ads if individual product listings lack the copy, images, or specifications needed for high conversion rates.
                   </div>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
@@ -1113,7 +1166,7 @@ export default function Dashboard() {
                               background: colors.surfaceAlt, border: `1px solid ${colors.border}`,
                               fontSize: "12px", color: colors.textSecondary, fontWeight: 500,
                             }}>
-                              {affectedCount} affected
+                              {affectedCount} affected product{affectedCount !== 1 ? 's' : ''}
                             </span>
                             <SeverityPill severity={severity} />
                             <span style={{
@@ -1270,7 +1323,9 @@ export default function Dashboard() {
                                           <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
                                           <line x1="1" y1="1" x2="23" y2="23"></line>
                                         </svg>
-                                        Ignore this rule because inventory visibility is not shown to customers on my storefront
+                                        {item.rawType === 'UNIFORM_INVENTORY'
+                                          ? "Ignore if intentional (normal for small, custom, or boutique stores)"
+                                          : "Ignore this rule because inventory visibility is not shown to customers on my storefront"}
                                       </button>
                                     </>
                                   )}
