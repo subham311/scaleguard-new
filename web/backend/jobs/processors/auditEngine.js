@@ -216,28 +216,85 @@ export function auditProductImages(product, auditRunId, isVisualOverride, domina
   const primaryImg = images.find(img => img.position === 1) || images[0];
   if (primaryImg && images.length > 1) {
     const filename = getFileName(primaryImg.src).toLowerCase();
-    const alt = primaryImg.alt.toLowerCase();
-    
-    const isSizeGuide = ['size chart', 'size-chart', 'size guide', 'size-guide', 'tabla de tallas', 'tabla-de-tallas', 'guia de tamanhos', 'tableau des tailles'].some(term => filename.includes(term) || alt.includes(term));
-    const isPackaging = ['packaging', 'package', 'box', 'caja', 'embalaje'].some(term => filename.includes(term) || alt.includes(term));
-    const isPlaceholder = ['logo', 'banner'].some(term => filename.includes(term) || alt.includes(term));
-    
-    if (isSizeGuide || isPackaging || isPlaceholder) {
-      issues.push({
-        auditRunId,
-        type: 'INCONSISTENT_PRIMARY_IMAGE',
-        severity: 'HIGH',
-        category: 'CONTENT',
-        affectedEntities: [shopifyId],
-        evidence: {
-          title,
-          primarySrc: primaryImg.src,
-          detectedType: isSizeGuide ? 'SIZE_GUIDE' : (isPackaging ? 'PACKAGING' : 'PLACEHOLDER'),
-          reason: 'Primary image represents size guide, packaging, or placeholder rather than the actual product.',
-          businessImpact: 'First impressions matter; showing a size chart first drives immediate user bounces.',
-          confidence: 'HIGH',
-        }
-      });
+    const alt = (primaryImg.alt || '').toLowerCase();
+    const prodTitle = (product.title || '').toLowerCase();
+    const prodType = (product.productType || '').toLowerCase();
+
+    // Check if the product title or category specifically matches packaging or gift sets
+    const packagingTerms = ['box', 'boxes', 'packaging', 'package', 'gift box', 'watch box', 'set', 'kit', 'case', 'bundle', 'crate'];
+    const isPackagingProduct = packagingTerms.some(term => {
+      const regex = new RegExp(`\\b${term}\\b`, 'i');
+      return regex.test(prodTitle) || regex.test(prodType);
+    });
+
+    // Extract core meaningful keywords from the product title (length >= 3, excluding common stop words)
+    const stopWords = new Set(['the', 'and', 'for', 'with', 'set', 'new', 'hot', 'pro', 'men', 'mens', 'women', 'womens']);
+    const titleKeywords = prodTitle
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter(w => w.length >= 3 && !stopWords.has(w));
+
+    // If the primary image's filename or alt text clearly contains core keywords from the product title (e.g. "watch"),
+    // then the primary image is depicting the actual product — avoid false positive
+    const primaryMatchesTitle = titleKeywords.length > 0 && titleKeywords.some(kw => filename.includes(kw) || alt.includes(kw));
+
+    // Precise patterns with word boundaries (avoid matching substrings like "box" inside "toolbox", "watchbox", etc.)
+    const sizeGuideRegex = /\b(?:size[- _]chart|size[- _]guide|tabla[- _]de[- _]tallas|guia[- _]de[- _]tamanhos|tableau[- _]des[- _]tailles|sizing[- _]chart|measurement[- _]chart)\b/i;
+    const isSizeGuide = sizeGuideRegex.test(filename) || sizeGuideRegex.test(alt);
+
+    // Only flag packaging if the product itself is NOT a box/packaging item AND primary image is solely an outer box/carton
+    const packagingOnlyRegex = /\b(?:packaging[- _]only|empty[- _]box|outer[- _]package|outer[- _]box|shipping[- _]box|parcel[- _]box|cardboard[- _]box)\b/i;
+    const isPackaging = !isPackagingProduct && (packagingOnlyRegex.test(filename) || packagingOnlyRegex.test(alt));
+
+    // Pure placeholder image
+    const placeholderRegex = /\b(?:placeholder|logo[- _]only|coming[- _]soon|default[- _]product[- _]image|temp[- _]image)\b/i;
+    const isPlaceholder = placeholderRegex.test(filename) || placeholderRegex.test(alt);
+
+    // Compare primary image with other gallery images to evaluate gallery consistency
+    const secondaryImages = images.filter(img => img.id !== primaryImg.id);
+    const primaryPrefix = getFileNamePrefix(filename);
+    const sharesPrefixWithGallery = primaryPrefix.length >= 4 && secondaryImages.some(img => {
+      const secPrefix = getFileNamePrefix(getFileName(img.src).toLowerCase());
+      return secPrefix === primaryPrefix || secPrefix.startsWith(primaryPrefix) || primaryPrefix.startsWith(secPrefix);
+    });
+
+    // Check if secondary images are actually product shots while primary is a size guide/placeholder
+    const secondaryHasSizeGuide = secondaryImages.some(img => {
+      const sFile = getFileName(img.src).toLowerCase();
+      const sAlt = (img.alt || '').toLowerCase();
+      return sizeGuideRegex.test(sFile) || sizeGuideRegex.test(sAlt);
+    });
+
+    // Check if the primary image should be flagged
+    if (!primaryMatchesTitle && !isPackagingProduct) {
+      if (isSizeGuide || isPackaging || isPlaceholder) {
+        // Evaluate visual confidence:
+        // High confidence ONLY if primary is explicitly an isolated size guide while other images have product shots,
+        // or an undeniable placeholder logo.
+        const isHighConfidence = (isSizeGuide && !secondaryHasSizeGuide) || isPlaceholder;
+
+        // If visual confidence is low, do NOT generate a High-severity warning
+        const severity = isHighConfidence ? 'MEDIUM' : 'LOW';
+
+        issues.push({
+          auditRunId,
+          type: 'INCONSISTENT_PRIMARY_IMAGE',
+          severity,
+          category: 'CONTENT',
+          affectedEntities: [shopifyId],
+          evidence: {
+            title,
+            primarySrc: primaryImg.src,
+            detectedType: isSizeGuide ? 'SIZE_GUIDE' : (isPackaging ? 'PACKAGING' : 'PLACEHOLDER'),
+            reason: isSizeGuide
+              ? 'Primary image appears to be a sizing chart rather than the main product presentation.'
+              : (isPackaging ? 'Primary image appears to show outer packaging rather than the product itself.' : 'Primary image appears to be a placeholder or logo.'),
+            businessImpact: 'The primary thumbnail is the customer’s first impression; showing a chart or placeholder reduces collection click-through rates.',
+            confidence: isHighConfidence ? 'HIGH' : 'LOW',
+            sharesPrefixWithGallery,
+          }
+        });
+      }
     }
   }
 
@@ -352,11 +409,74 @@ export function isDimensionSensitiveProduct(product) {
 }
 
 export function hasProductDimensions(product) {
+  // Comprehensive dimension regex patterns:
+  // 1. Metric: 120cm, 150mm, 2.5m, 120 x 170 cm, 160x230cm, 200×300cm
+  const metricRegex = /\b\d+(\.\d+)?\s*(?:cm|mm|m)\b/i;
+  // 2. Imperial: 5ft, 7 feet, 24 inch, 24 inches, 24in, 5', 8", 5' x 7', 8ft x 10ft
+  const imperialRegex = /\b\d+(\.\d+)?\s*(?:in|inch|inches|\"|'|’|ft|feet)\b/i;
+  // 3. Multi-dimensional formats (rugs/carpets, signs, furniture): 120x170, 160 x 230, 5x7, 120×170, 160*230, 5' x 7', 24" x 36"
+  const multiDimRegex = /\b\d+(\.\d+)?\s*(?:cm|mm|m|in|inch|inches|\"|'|’|ft|feet)?\s*(?:x|×|\*|by)\s*\d+(\.\d+)?\s*(?:cm|mm|m|in|inch|inches|\"|'|’|ft|feet)?\b/i;
+  // 4. Common rug standard sizes: e.g. 120x170, 160x230, 200x290, 60x90, 80x150, 5'x7', 8'x10', 9'x12', 6'x9'
+  const rugDimRegex = /\b\d{2,3}\s*(?:x|×|\*)\s*\d{2,3}\b/i;
+  const rugImperialRegex = /\b\d+\s*['’ft]\s*(?:x|×|\*|by)\s*\d+\s*['”"ft]?\b/i;
+  const roundDimRegex = /\b\d+\s*(?:cm|mm|m|in|inch|inches|\"|'|ft)\s*(?:round|circle|dia|diameter)\b/i;
+
+  const matchesAnyDimensionPattern = (text) => {
+    if (!text || typeof text !== 'string') return false;
+    return multiDimRegex.test(text) ||
+      rugDimRegex.test(text) ||
+      rugImperialRegex.test(text) ||
+      roundDimRegex.test(text) ||
+      metricRegex.test(text) ||
+      imperialRegex.test(text);
+  };
+
+  // 1. Check product options / variants
+  // Customers can select dimensions directly through variants (e.g. rugs: 120x170cm, 160x230cm, 5' x 7')
+  if (Array.isArray(product.variants) && product.variants.length > 0) {
+    for (const v of product.variants) {
+      const vTitle = (v.title || '').trim();
+      if (matchesAnyDimensionPattern(vTitle)) {
+        return true;
+      }
+    }
+  }
+
+  // 2. Check product.options if present (e.g. options = [{ name: 'Size', values: ['120x170cm', '160x230cm'] }])
+  if (Array.isArray(product.options) && product.options.length > 0) {
+    for (const opt of product.options) {
+      const optName = (opt.name || '').toLowerCase();
+      const isDimensionOption = ['size', 'dimension', 'dimensions', 'measurement', 'measurements', 'rug size', 'carpet size', 'format', 'formatos', 'tamaño', 'medidas', 'größe'].some(term => optName.includes(term));
+      
+      const values = Array.isArray(opt.values) ? opt.values : [];
+      if (values.some(val => matchesAnyDimensionPattern(String(val)))) {
+        return true;
+      }
+      if (isDimensionOption && values.length > 0 && values.some(val => /\d/.test(String(val)))) {
+        return true;
+      }
+    }
+  }
+
+  // 3. Check product tags for dimensions (e.g. "size:120x170", "160x230", "5x7ft")
+  const tags = (product.tags || '').toLowerCase();
+  if (tags && matchesAnyDimensionPattern(tags)) {
+    return true;
+  }
+
+  // 4. Check specifications or metafields
+  if (product.metafields) {
+    const metaStr = typeof product.metafields === 'string'
+      ? product.metafields
+      : JSON.stringify(product.metafields);
+    if (matchesAnyDimensionPattern(metaStr)) {
+      return true;
+    }
+  }
+
+  // 5. Check product description
   const desc = (product.description || '').toLowerCase();
-  
-  // Regex pattern for common dimension notations: e.g. 10x10, 12 x 12, 15cm, 6 inch, 8", 200mm, etc.
-  const dimensionRegex = /\b\d+(\.\d+)?\s*(cm|mm|m|in|inch|inches|\"|x\s*\d+|ft)\b/i;
-  if (dimensionRegex.test(desc)) {
+  if (matchesAnyDimensionPattern(desc)) {
     return true;
   }
 
@@ -700,42 +820,62 @@ export function auditProductFulfillment(product, auditRunId, imageIntelIssues = 
     }
   }
 
-  // 1. Delivery Risk Classification (Section 5.1 & 5.4)
-  let riskType = 'DELIVERY_RISK_LOW';
+  // 1. Consolidated Delivery & Fulfillment Risk Classification
+  const signals = [];
+  if (estimate > 21) {
+    signals.push(`Extremely long delivery timeline (~${estimate} days)`);
+  } else if (estimate >= 15) {
+    signals.push(`Long delivery timeline (~${estimate} days)`);
+  } else if (estimate >= 10) {
+    signals.push(`Moderate delivery timeline (~${estimate} days)`);
+  } else {
+    signals.push(`Fast delivery timeline (~${estimate} days)`);
+  }
+
+  if (comm === 'POOR') {
+    signals.push('Unclear dispatch information');
+    signals.push('Missing tracking information');
+    signals.push('Weak delivery communication');
+  } else {
+    signals.push('Clear shipping tracking expectations provided');
+  }
+
+  if (model === 'OVERSEAS_DROPSHIP') {
+    signals.push('Overseas dropshipping fulfillment signals');
+  } else if (model === 'CUSTOM_MADE') {
+    signals.push('Custom-made item');
+  } else if (model === 'LOCAL_FULFILLMENT') {
+    signals.push('Local fulfillment signals');
+  }
+
   let riskSeverity = 'LOW';
   let riskReason = '';
   let riskImpact = '';
 
   if (model === 'CUSTOM_MADE') {
     if (comm === 'POOR') {
-      riskType = 'DELIVERY_RISK_MEDIUM';
       riskSeverity = 'MEDIUM';
-      riskReason = 'Custom-made product lacks clear shipping expectations in description.';
+      riskReason = 'Custom-made product lacks clear shipping expectations or dispatch timeframe in description.';
       riskImpact = 'Buyers are willing to wait for custom items, but missing communication increases order cancellations.';
     } else {
-      riskType = 'DELIVERY_RISK_LOW';
       riskSeverity = 'LOW';
       riskReason = 'Custom-made product with appropriate shipping communication.';
       riskImpact = 'Strong communication secures customer trust for custom items.';
     }
   } else {
     if (estimate > 21 || (model === 'OVERSEAS_DROPSHIP' && comm === 'POOR')) {
-      riskType = 'DELIVERY_RISK_CRITICAL';
       riskSeverity = 'CRITICAL';
-      riskReason = `Delivery time estimate is extremely long (${estimate} days) or overseas dropshipping is combined with poor communication.`;
-      riskImpact = 'Extremely slow shipping causes checkout abandonment and refund rates spike.';
-    } else if ((estimate >= 15 && estimate <= 21 && comm === 'POOR') || (model === 'OVERSEAS_DROPSHIP' && comm === 'GOOD')) {
-      riskType = 'DELIVERY_RISK_HIGH';
+      riskReason = `Delivery time estimate is extremely long (${estimate} days) or overseas dropshipping is combined with poor tracking communication.`;
+      riskImpact = 'Extremely slow shipping and missing delivery reassurance cause checkout abandonment, disputes, and chargebacks.';
+    } else if ((estimate >= 15 && estimate <= 21) || (model === 'OVERSEAS_DROPSHIP' && comm === 'GOOD') || (estimate > 10 && comm === 'POOR')) {
       riskSeverity = 'HIGH';
-      riskReason = `Delivery estimate is long (${estimate} days) and lacks clear tracking instructions, or is standard dropshipping fulfillment.`;
-      riskImpact = 'High delivery timeline reduces buyer trust and conversion rates.';
+      riskReason = `Delivery estimate is long (${estimate} days) or lacks clear dispatch/tracking instructions.`;
+      riskImpact = 'Long delivery timelines without clear communication reduce buyer trust and conversion rates.';
     } else if ((estimate >= 10 && estimate <= 14) || (model === 'LOCAL_FULFILLMENT' && comm === 'POOR')) {
-      riskType = 'DELIVERY_RISK_MEDIUM';
       riskSeverity = 'MEDIUM';
       riskReason = `Delivery estimate is moderate (${estimate} days) or locally shipped but missing detailed delivery policy copy.`;
-      riskImpact = 'Moderate shipping times require reassurance to convert skeptical buyers.';
+      riskImpact = 'Moderate shipping times require reassurance on the product page to convert skeptical buyers.';
     } else {
-      riskType = 'DELIVERY_RISK_LOW';
       riskSeverity = 'LOW';
       riskReason = `Fast delivery estimate (${estimate} days) with clear shipping expectations.`;
       riskImpact = 'Fast delivery is a positive trust signal that boosts conversion rates.';
@@ -743,13 +883,12 @@ export function auditProductFulfillment(product, auditRunId, imageIntelIssues = 
   }
 
   // Only emit an issue if the risk level is actionable (MEDIUM, HIGH, CRITICAL).
-  // DELIVERY_RISK_LOW means the product is healthy — no warning needed. It still
-  // contributes zero deductions to the Fulfillment Trust Score, so the score
-  // correctly reflects the store's delivery health without noisy LOW entries.
-  if (riskType !== 'DELIVERY_RISK_LOW') {
+  // Consolidates delivery risk into a single 'DELIVERY_FULFILLMENT_RISK' category,
+  // avoiding duplicate warnings (such as previously separate LONG_DELIVERY_NO_COMM).
+  if (riskSeverity !== 'LOW') {
     issues.push({
       auditRunId,
-      type: riskType,
+      type: 'DELIVERY_FULFILLMENT_RISK',
       severity: riskSeverity,
       category: 'INVENTORY',
       affectedEntities: [shopifyId],
@@ -759,35 +898,13 @@ export function auditProductFulfillment(product, auditRunId, imageIntelIssues = 
         shippingCommunication: comm,
         deliveryEstimateDays: estimate,
         hasExplicitEstimate,
+        signals,
         reason: riskReason,
         businessImpact: riskImpact,
         confidence: 'HIGH'
       }
     });
   }
-
-  // 2. Long Delivery Without Communication (Section 5.2)
-  if (estimate > 10 && comm === 'POOR' && model !== 'CUSTOM_MADE') {
-    issues.push({
-      auditRunId,
-      type: 'LONG_DELIVERY_NO_COMM',
-      severity: 'HIGH',
-      category: 'INVENTORY',
-      affectedEntities: [shopifyId],
-      evidence: {
-        title,
-        deliveryEstimateDays: estimate,
-        fulfillmentModel: model,
-        isSubReasonOf: 'DELIVERY_RISK_CRITICAL',
-        subReasonLabel: 'Weak Customer Expectation Management',
-        reason: `Long shipping estimate of ${estimate} days is published without clear tracking or shipping updates.`,
-        businessImpact: 'Failing to communicate long shipping times creates severe customer friction and chargeback risks.',
-        advisory: 'Long delivery times are often associated with low-trust dropshipping experiences, especially when products appear generic or supplier-sourced. If delivery cannot be improved, make the shipping timeline very clear before purchase to reduce refunds, chargebacks and customer complaints.',
-        confidence: 'HIGH'
-      }
-    });
-  }
-
 
   return { issues, model, comm, estimate };
 }
@@ -1143,28 +1260,32 @@ export function checkIfSpecsAreAtBottom(html) {
   return firstSpecIndex >= text.length * 0.4;
 }
 
-export function isRepetitiveGenericDescription(html, title, lang = 'en') {
-  if (!html) return false;
-  const text = html.replace(/<[^>]*>?/gm, '').trim();
+export function checkRepetitiveGenericDescription(html, title, lang = 'en') {
+  if (!html) return { isRepetitive: false, detectedPattern: '', reason: '' };
+  const text = html.replace(/<[^>]*>?/gm, ' ').trim();
   const lowerText = text.toLowerCase();
   
   // Check 1: Title or key title segments repetition
   if (title && title.length >= 8) {
-    const cleanTitle = title.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim();
+    const cleanTitle = title.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').trim();
     const titleWords = cleanTitle.split(/\s+/).filter(w => w.length >= 3);
     if (titleWords.length >= 3) {
       for (let i = 0; i <= titleWords.length - 3; i++) {
         const phrase = titleWords.slice(i, i + 3).join(' ');
         const matches = lowerText.split(phrase).length - 1;
         if (matches >= 3) {
-          return true;
+          return {
+            isRepetitive: true,
+            detectedPattern: `Title phrase repetition: "${phrase}" repeated ${matches} times in description`,
+            reason: `Product description repeatedly stuffs title keyphrase ("${phrase}") ${matches} times.`,
+          };
         }
       }
     }
   }
   
   // Check 2: Repeated 4-word sequences (sliding window)
-  const words = lowerText.replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(Boolean);
+  const words = lowerText.replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(Boolean);
   const stopWords = new Set(getStopWords(lang));
   const phraseCounts = {};
   for (let i = 0; i <= words.length - 4; i++) {
@@ -1173,59 +1294,114 @@ export function isRepetitiveGenericDescription(html, title, lang = 'en') {
     const phrase = phraseWords.join(' ');
     phraseCounts[phrase] = (phraseCounts[phrase] || 0) + 1;
     if (phraseCounts[phrase] >= 3) {
-      return true;
+      return {
+        isRepetitive: true,
+        detectedPattern: `Repeated multi-word boilerplate: "${phrase}" detected ${phraseCounts[phrase]} times`,
+        reason: `Description repeats the boilerplate phrase "${phrase}" ${phraseCounts[phrase]} times.`,
+      };
     }
   }
-  
-  return false;
+
+  // Check 3: Repetitive line/bullet patterns (identical repeated lines)
+  const rawLines = text.split(/\n+/).map(l => l.trim().toLowerCase()).filter(l => l.length >= 15);
+  const lineCounts = {};
+  for (const line of rawLines) {
+    lineCounts[line] = (lineCounts[line] || 0) + 1;
+    if (lineCounts[line] >= 3) {
+      return {
+        isRepetitive: true,
+        detectedPattern: `Identical repeated section or heading: "${line.slice(0, 50)}..."`,
+        reason: `Description contains identical duplicated lines or headings.`,
+      };
+    }
+  }
+
+  return { isRepetitive: false, detectedPattern: '', reason: '' };
 }
 
-function isSupplierDescription(html) {
-  if (!html) return false;
-  const text = html.replace(/<[^>]*>?/gm, '').toLowerCase();
-  
-  const supplierPhrases = [
-    'due to manual measurement',
-    'allow slight difference',
-    'color deviation',
-    'actual color may be slightly',
-    'brand new and high quality',
-    '100% brand new',
-    'please allow',
-    'item color displayed in photos',
-    'due to the light and screen difference',
-    'wholesale and drop shipping',
-    'drop shipping',
-    'dropshipping',
-    'aliexpress',
-    'temu',
-    'china post',
-    'estimated delivery time',
-    'import duties',
-    'tax not included',
-    'factory direct',
-    'no package box',
-    'opp bag package',
-    'satisfaction guarantee contact us',
-    // Calibrate: Add typical supplier-style fields
-    'choice: yes',
-    'choice: no',
-    'package size',
-    'packing list',
-    'model number:',
-    'brand name:',
-    'origin:',
-    'applicable season',
-    'applicable scene'
+export function isRepetitiveGenericDescription(html, title, lang = 'en') {
+  return checkRepetitiveGenericDescription(html, title, lang).isRepetitive;
+}
+
+export function checkSupplierDescription(html) {
+  if (!html) return { isSupplier: false, detectedSignals: [], reason: '' };
+  const text = html.replace(/<[^>]*>?/gm, ' ').toLowerCase();
+
+  const detectedSignals = [];
+
+  // 1. Strong / Definitive Supplier Sizing & 2-3 cm manual measurement disclaimers
+  const manualMeasurementPatterns = [
+    /\b(?:due to manual measurement|manual measurement|measured by hand)\b.*(?:\b\d+\s*[-–~to]\s*\d+\s*(?:cm|mm|in|inch)\b|\berror\b|\bdifference\b|\bdeviation\b)/i,
+    /\b(?:\d+\s*[-–~to]\s*\d+\s*(?:cm|mm)\s*(?:error|difference|tolerance|deviation))\b/i,
+    /\b(?:please allow\s+\d+\s*[-–~to]\s*\d+\s*(?:cm|mm)\s*(?:error|difference|deviation))\b/i,
+    /\b(?:asian size is (?:smaller|different)|check (?:our )?size chart not (?:amazon|aliexpress)|supplier sizing)\b/i,
+    /\btolerancia de medici[oó]n manual de \d+[-–]\d+\s*cm\b/i
   ];
-  
-  let phraseMatches = 0;
-  for (const phrase of supplierPhrases) {
-    if (text.includes(phrase)) {
-      phraseMatches++;
+  for (const pattern of manualMeasurementPatterns) {
+    if (pattern.test(text)) {
+      detectedSignals.push('Manual measurement disclaimer (2–3 cm error/difference warning)');
+      break;
     }
   }
-  return phraseMatches >= 1;
+
+  // 2. Screen/Monitor colour disclaimers
+  const colorDisclaimerPatterns = [
+    /\b(?:due to (?:the )?light and screen difference|color deviation (?:might|may) differ)\b/i,
+    /\bactual color may be slightly different (?:from|due to) (?:the )?(?:pictures|screen|monitor|photo)\b/i,
+    /\bitem color displayed in photos may be showing slightly different on your (?:computer )?monitor\b/i,
+    /\b(?:el color real puede variar ligeramente debido a la pantalla|diferencia de luz y pantalla)\b/i
+  ];
+  for (const pattern of colorDisclaimerPatterns) {
+    if (pattern.test(text)) {
+      detectedSignals.push('Screen/monitor colour variation disclaimer');
+      break;
+    }
+  }
+
+  // 3. Supplier codes & marketplace-specific fields (AliExpress / Temu raw importer fields)
+  const marketplaceFieldPatterns = [
+    { pattern: /\bchoice:\s*(?:yes|no)\b/i, label: 'AliExpress Choice feed field ("choice: yes/no")' },
+    { pattern: /\b(?:model number:|factory item no:|item no\.:\s*[a-z0-9_-]{4,}|sku code:\s*[a-z0-9_-]{4,})\b/i, label: 'Supplier factory model/item numbering' },
+    { pattern: /\b(?:origin:\s*(?:mainland china|cn)|country of origin:\s*cn)\b/i, label: 'Raw origin metadata field' },
+    { pattern: /\b(?:opp bag pack(?:age|ing)?|no retail box|without box pack(?:age|ing)?)\b/i, label: 'Wholesale packaging marker ("opp bag / no retail box")' },
+    { pattern: /\b(?:package includes:\s*1\s*pc|packing list:\s*1\s*x|1\s*pcs?\s*\/\s*lot)\b/i, label: 'Wholesale/marketplace package packing list' },
+    { pattern: /\b(?:applicable season:\s*[a-z]+|applicable scene:\s*[a-z]+)\b/i, label: 'Marketplace attribute dump ("applicable season/scene")' }
+  ];
+  for (const { pattern, label } of marketplaceFieldPatterns) {
+    if (pattern.test(text)) {
+      detectedSignals.push(label);
+    }
+  }
+
+  // 4. Factory-style / dropship platform wording
+  const platformWordingPatterns = [
+    { pattern: /\b(?:wholesale and drop shipping|welcome dropshipping|drop\s*shipping supported)\b/i, label: 'Wholesale/dropship solicitation' },
+    { pattern: /\b(?:aliexpress|temu|1688(?:\.com)?|cj\s*dropshipping|dhgate)\b/i, label: 'Supplier marketplace platform mentions (AliExpress/Temu/1688)' },
+    { pattern: /\b(?:factory direct (?:sale|supply|price)|source factory)\b/i, label: 'Factory-direct / wholesale supplier phrasing' },
+    { pattern: /\b(?:import duties.*taxes are not included|customs? clearance.*buyer.*responsible)\b/i, label: 'Raw customs & import duties disclaimer' },
+    { pattern: /\b(?:do not leave negative feedback.*contact seller|contact customer service before (?:opening a )?dispute)\b/i, label: 'Marketplace seller dispute disclaimer' }
+  ];
+  for (const { pattern, label } of platformWordingPatterns) {
+    if (pattern.test(text)) {
+      detectedSignals.push(label);
+    }
+  }
+
+  // Decision rule:
+  // Requires at least 1 definitive supplier signal. Loose phrases like lone "please allow" or "satisfaction guarantee" have been removed.
+  const isSupplier = detectedSignals.length >= 1;
+
+  return {
+    isSupplier,
+    detectedSignals,
+    reason: isSupplier
+      ? `Supplier-style copy detected: ${detectedSignals.join('; ')}.`
+      : ''
+  };
+}
+
+export function isSupplierDescription(html) {
+  return checkSupplierDescription(html).isSupplier;
 }
 
 async function calculateDescriptionQualityScore(html, title, lang = 'en', options = {}) {
@@ -1447,9 +1623,9 @@ function buildScoreExplanations(issues, scores) {
 
   // Fulfillment Trust
   let fulfillmentTrustExplanation = 'Fulfillment Trust covers delivery speed estimates, dropshipping fulfillment model markers, and clear shipping tracking expectations. ';
-  const criticalDel = issues.filter(i => i.type === 'DELIVERY_RISK_CRITICAL').length;
-  const highDel = issues.filter(i => i.type === 'DELIVERY_RISK_HIGH').length;
-  const medDel = issues.filter(i => i.type === 'DELIVERY_RISK_MEDIUM').length;
+  const criticalDel = issues.filter(i => i.type === 'DELIVERY_RISK_CRITICAL' || (i.type === 'DELIVERY_FULFILLMENT_RISK' && i.severity === 'CRITICAL')).length;
+  const highDel = issues.filter(i => i.type === 'DELIVERY_RISK_HIGH' || (i.type === 'DELIVERY_FULFILLMENT_RISK' && i.severity === 'HIGH')).length;
+  const medDel = issues.filter(i => i.type === 'DELIVERY_RISK_MEDIUM' || (i.type === 'DELIVERY_FULFILLMENT_RISK' && i.severity === 'MEDIUM')).length;
   const longNoComm = issues.filter(i => i.type === 'LONG_DELIVERY_NO_COMM').length;
 
   const fulfillmentParts = [];
@@ -1670,21 +1846,11 @@ export async function processAuditRun(jobData) {
         }
 
         // Section 1.1 Enhanced Description Detection
+        const suppResult = checkSupplierDescription(product.description);
+        const repResult = checkRepetitiveGenericDescription(product.description, product.title, productLang);
         let isSpec = false;
-        let isSupp = false;
-        let isRepetitive = false;
 
-        if (isSupplierDescription(product.description)) {
-          isSupp = true;
-        } else if (isSpecDumpDescription(product.description, productLang)) {
-          isSpec = true;
-        }
-
-        if (isRepetitiveGenericDescription(product.description, product.title, productLang)) {
-          isRepetitive = true;
-        }
-
-        if (isSupp) {
+        if (suppResult.isSupplier) {
           issues.push({
             auditRunId: auditRun.id,
             type: 'SUPPLIER_DESCRIPTION',
@@ -1694,11 +1860,14 @@ export async function processAuditRun(jobData) {
             evidence: {
               title: product.title,
               descriptionLength: textLen,
+              detectedSignals: suppResult.detectedSignals,
+              reason: suppResult.reason || 'Supplier-style boilerplate content or logistics warnings detected.',
               businessImpact: 'AliExpress/Temu-style phrases make the store look like a low-trust drop-shipping hub.',
               confidence: 'HIGH',
             },
           });
-        } else if (isSpec) {
+        } else if (isSpecDumpDescription(product.description, productLang)) {
+          isSpec = true;
           const specsAreAtBottom = checkIfSpecsAreAtBottom(product.description);
           issues.push({
             auditRunId: auditRun.id,
@@ -1716,7 +1885,7 @@ export async function processAuditRun(jobData) {
           });
         }
 
-        if (isRepetitive) {
+        if (repResult.isRepetitive) {
           issues.push({
             auditRunId: auditRun.id,
             type: 'REPETITIVE_GENERIC_DESCRIPTION',
@@ -1726,7 +1895,10 @@ export async function processAuditRun(jobData) {
             evidence: {
               title: product.title,
               descriptionLength: textLen,
+              detectedPattern: repResult.detectedPattern,
+              reason: repResult.reason || 'Description contains repetitive phrasing or title keyword repetition.',
               businessImpact: 'Repetitive headings, phrases, or product name stuffing lowers consumer trust and signals AI template content.',
+              recommendedAction: 'Rewrite product description with original, benefit-focused copywriting and remove repetitive phrasing.',
               confidence: 'HIGH',
             },
           });
@@ -2376,7 +2548,7 @@ export async function processAuditRun(jobData) {
     const catalogConsistency = Math.max(20, Math.min(100, Math.round(100 - consistencyDeduction)));
 
     const fulfillmentTrust = (() => {
-      const fIssues = filteredIssues.filter(i => ['DELIVERY_RISK_MEDIUM', 'DELIVERY_RISK_HIGH', 'DELIVERY_RISK_CRITICAL'].includes(i.type));
+      const fIssues = filteredIssues.filter(i => ['DELIVERY_RISK_MEDIUM', 'DELIVERY_RISK_HIGH', 'DELIVERY_RISK_CRITICAL', 'DELIVERY_FULFILLMENT_RISK'].includes(i.type));
       const longDelNoCommIssues = filteredIssues.filter(i => i.type === 'LONG_DELIVERY_NO_COMM');
       
       let riskDeductionShare = 0;
@@ -2388,11 +2560,11 @@ export async function processAuditRun(jobData) {
           riskDeductionShare += affectedRatio * 20;
         }
         
-        if (issue.type === 'DELIVERY_RISK_CRITICAL') {
+        if (issue.type === 'DELIVERY_RISK_CRITICAL' || (issue.type === 'DELIVERY_FULFILLMENT_RISK' && issue.severity === 'CRITICAL')) {
           riskDeductionShare += affectedRatio * 35;
-        } else if (issue.type === 'DELIVERY_RISK_HIGH') {
+        } else if (issue.type === 'DELIVERY_RISK_HIGH' || (issue.type === 'DELIVERY_FULFILLMENT_RISK' && issue.severity === 'HIGH')) {
           riskDeductionShare += affectedRatio * 20;
-        } else if (issue.type === 'DELIVERY_RISK_MEDIUM') {
+        } else if (issue.type === 'DELIVERY_RISK_MEDIUM' || (issue.type === 'DELIVERY_FULFILLMENT_RISK' && issue.severity === 'MEDIUM')) {
           riskDeductionShare += affectedRatio * 10;
         }
       }
@@ -2426,7 +2598,7 @@ export async function processAuditRun(jobData) {
       deduction += (new Set(duplicateImg.flatMap(i => i.affectedEntities || [])).size / totalScannedCount) * 15;
       
       const dropshipDelivery = filteredIssues.filter(i => 
-        ['DELIVERY_RISK_MEDIUM', 'DELIVERY_RISK_HIGH', 'DELIVERY_RISK_CRITICAL'].includes(i.type) && 
+        ['DELIVERY_RISK_MEDIUM', 'DELIVERY_RISK_HIGH', 'DELIVERY_RISK_CRITICAL', 'DELIVERY_FULFILLMENT_RISK'].includes(i.type) && 
         i.evidence?.fulfillmentModel === 'OVERSEAS_DROPSHIP'
       );
       deduction += (new Set(dropshipDelivery.flatMap(i => i.affectedEntities || [])).size / totalScannedCount) * 30;

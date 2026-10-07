@@ -433,14 +433,11 @@ async function handleCreateSubscription(req, res) {
     console.log('Price:', price);
 
     // Build return URL
-    const baseUrl = process.env.FRONTEND_URL || process.env.SHOPIFY_APP_URL || 'http://localhost:3000';
-    const host = req.query.host;
-    const returnUrlParams = new URLSearchParams();
-    returnUrlParams.set('shop', shopDomain);
-    if (host) {
-      returnUrlParams.set('host', host);
-    }
-    const returnUrl = `${baseUrl}/billing/confirm?${returnUrlParams.toString()}`;
+    // We redirect the merchant directly back to the app's Pricing page inside the Shopify Admin.
+    // This preserves the embedded app context natively without requiring intermediate routes.
+    const storeName = shopDomain.replace('.myshopify.com', '');
+    const apiKey = process.env.SHOPIFY_API_KEY;
+    const returnUrl = `https://admin.shopify.com/store/${storeName}/apps/${apiKey}/Pricing`;
 
     // Determine test store status
     let isTestStore = false;

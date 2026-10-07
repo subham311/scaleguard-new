@@ -1330,11 +1330,11 @@ export default function Dashboard() {
                                     </>
                                   )}
                                   {/* Delivery Risk override button */}
-                                  {item.rawType && item.rawType === 'DELIVERY_RISK_CRITICAL' && (
+                                  {item.rawType && ['DELIVERY_FULFILLMENT_RISK', 'DELIVERY_RISK_CRITICAL'].includes(item.rawType) && (
                                     <>
                                       <div style={{ height: "12px", width: "1px", background: colors.border }} />
                                       <button
-                                        onClick={() => handleToggleOverride('DELIVERY_RISK_CRITICAL', true)}
+                                        onClick={() => handleToggleOverride(item.rawType, true)}
                                         disabled={isSavingOverride}
                                         style={{
                                           border: `1px solid #FF990050`,

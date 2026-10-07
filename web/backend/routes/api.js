@@ -320,6 +320,15 @@ const RECOMMENDATION_TEMPLATES = {
     paid: "Lowers conversion rate for shopping comparison platforms.",
     action: "Define Shopify standard metafields for colors, materials, and features."
   },
+  DELIVERY_FULFILLMENT_RISK: {
+    why: "Delivery timeline estimate is long, dispatch timeframe is unclear, tracking information is missing, or fulfillment expectations are weakly communicated.",
+    matters: "Slow delivery times and unclear shipping expectations trigger payment disputes, order cancellations, chargeback risk, and reduce customer conversion.",
+    trust: "Critical",
+    conversion: "Critical",
+    paid: "High bounce rate",
+    action: "Offer local warehouse fulfillment where possible, or add explicit delivery/tracking notifications and a clear shipping timeline policy on the product page. If long delivery is an intentional part of your business model (dropshipping, made-to-order, or handmade products), make the shipping timeline very clear before purchase to reduce refunds, chargebacks and customer complaints. Note: ScaleGuard will continue to show an advisory reminder for this risk if acknowledged.",
+    advisory: "Long delivery times are often associated with low-trust dropshipping experiences, especially when products appear generic or supplier-sourced. Even if this issue is acknowledged as intentional, make the shipping timeline very clear before purchase to reduce refunds, chargebacks and customer complaints."
+  },
   DELIVERY_RISK_CRITICAL: {
     why: "Delivery timeline estimate is extremely long (over 21 days) or overseas dropshipping is combined with poor tracking communication.",
     matters: "Slow delivery times trigger payment disputes, order cancellations, chargeback risk, and severely reduce customer trust.",
@@ -410,11 +419,12 @@ const DISPLAY_NAMES = {
   MISSING_PRODUCT_DIMENSIONS:       'Missing Product Dimensions',
   INCOMPLETE_ORGANIZATION:          'Incomplete Product Organization',
   MISSING_RECOMMENDED_METAFIELDS:   'Missing Recommended Attributes',
-  DELIVERY_RISK_CRITICAL:           'Critical Delivery Risk',
-  DELIVERY_RISK_HIGH:               'High Delivery Risk',
-  DELIVERY_RISK_MEDIUM:             'Moderate Delivery Risk',
-  DELIVERY_RISK_LOW:                'Low Delivery Risk',
-  LONG_DELIVERY_NO_COMM:            'Long Delivery Without Clear Communication',
+  DELIVERY_FULFILLMENT_RISK:        'Delivery & Fulfillment Risk',
+  DELIVERY_RISK_CRITICAL:           'Delivery & Fulfillment Risk',
+  DELIVERY_RISK_HIGH:               'Delivery & Fulfillment Risk',
+  DELIVERY_RISK_MEDIUM:             'Delivery & Fulfillment Risk',
+  DELIVERY_RISK_LOW:                'Delivery & Fulfillment Risk',
+  LONG_DELIVERY_NO_COMM:            'Delivery & Fulfillment Risk',
   CATALOG_DUMP_RISK:                'Catalog Dump Risk',
 };
 
@@ -437,11 +447,11 @@ const IMPACT_BUCKETS = {
   PAID_TRAFFIC_RISK: [
     'LOW_QUALITY_IMAGE', 'BELOW_RECOMMENDED_RESOLUTION', 'POOR_PRESENTATION',
     'VARIANT_PRICE_GAP', 'COLLECTION_PRICE_OUTLIER', 'INCONSISTENT_PRICE_POSITIONING',
-    'CATALOG_INCONSISTENCY', 'DELIVERY_RISK_CRITICAL', 'DELIVERY_RISK_HIGH',
+    'CATALOG_INCONSISTENCY', 'DELIVERY_FULFILLMENT_RISK', 'DELIVERY_RISK_CRITICAL', 'DELIVERY_RISK_HIGH',
   ],
   // Fulfillment & Delivery — shipping and trust risks
   FULFILLMENT_RISK: [
-    'DELIVERY_RISK_MEDIUM', 'DELIVERY_RISK_LOW', 'LONG_DELIVERY_NO_COMM',
+    'DELIVERY_FULFILLMENT_RISK', 'DELIVERY_RISK_MEDIUM', 'DELIVERY_RISK_LOW', 'LONG_DELIVERY_NO_COMM',
     'UNIFORM_INVENTORY', 'UNREALISTIC_INVENTORY', 'DEAD_INVENTORY',
   ],
   // Catalog Organization — metadata and structure issues
@@ -773,7 +783,7 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
 
       // Dynamic calculation of Section 6 scores
       scores.fulfillmentTrust = (() => {
-        const fIssues = issues.filter(i => ['DELIVERY_RISK_MEDIUM', 'DELIVERY_RISK_HIGH', 'DELIVERY_RISK_CRITICAL'].includes(i.type));
+        const fIssues = issues.filter(i => ['DELIVERY_RISK_MEDIUM', 'DELIVERY_RISK_HIGH', 'DELIVERY_RISK_CRITICAL', 'DELIVERY_FULFILLMENT_RISK'].includes(i.type));
         const longDelNoCommIssues = issues.filter(i => i.type === 'LONG_DELIVERY_NO_COMM');
         
         let riskDeductionShare = 0;
@@ -787,11 +797,11 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
             riskDeductionShare += affectedRatio * 20;
           }
           
-          if (issue.type === 'DELIVERY_RISK_CRITICAL') {
+          if (issue.type === 'DELIVERY_RISK_CRITICAL' || (issue.type === 'DELIVERY_FULFILLMENT_RISK' && issue.severity === 'CRITICAL')) {
             riskDeductionShare += affectedRatio * 35;
-          } else if (issue.type === 'DELIVERY_RISK_HIGH') {
+          } else if (issue.type === 'DELIVERY_RISK_HIGH' || (issue.type === 'DELIVERY_FULFILLMENT_RISK' && issue.severity === 'HIGH')) {
             riskDeductionShare += affectedRatio * 20;
-          } else if (issue.type === 'DELIVERY_RISK_MEDIUM') {
+          } else if (issue.type === 'DELIVERY_RISK_MEDIUM' || (issue.type === 'DELIVERY_FULFILLMENT_RISK' && issue.severity === 'MEDIUM')) {
             riskDeductionShare += affectedRatio * 10;
           }
         }
@@ -826,7 +836,7 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
         
         const dropshipDelivery = issues.filter(i => {
           const ev = typeof i.evidence === 'string' ? JSON.parse(i.evidence) : i.evidence;
-          return ['DELIVERY_RISK_MEDIUM', 'DELIVERY_RISK_HIGH', 'DELIVERY_RISK_CRITICAL'].includes(i.type) && 
+          return ['DELIVERY_RISK_MEDIUM', 'DELIVERY_RISK_HIGH', 'DELIVERY_RISK_CRITICAL', 'DELIVERY_FULFILLMENT_RISK'].includes(i.type) && 
             ev?.fulfillmentModel === 'OVERSEAS_DROPSHIP';
         });
         deduction += (new Set(dropshipDelivery.flatMap(i => safeEntities(i.affectedEntities))).size / totalScannedCount) * 30;
@@ -945,23 +955,31 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
       // Severity sort order for max-severity grouping
       const SEVERITY_RANK = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
 
+      const DELIVERY_RISK_TYPES = new Set([
+        'DELIVERY_FULFILLMENT_RISK', 'DELIVERY_RISK_CRITICAL', 'DELIVERY_RISK_HIGH',
+        'DELIVERY_RISK_MEDIUM', 'DELIVERY_RISK_LOW', 'LONG_DELIVERY_NO_COMM'
+      ]);
+
       // Group issues by type to avoid repeating the same issue type multiple times
+      // Consolidates all delivery-related issues into a single 'DELIVERY_FULFILLMENT_RISK' group
       const groupedIssues = issues.reduce((acc, issue) => {
-        if (!acc[issue.type]) {
-          acc[issue.type] = {
+        const groupType = DELIVERY_RISK_TYPES.has(issue.type) ? 'DELIVERY_FULFILLMENT_RISK' : issue.type;
+
+        if (!acc[groupType]) {
+          acc[groupType] = {
             id: issue.id, // Use the first issue ID as the group ID
-            type: issue.type,
+            type: groupType,
             severity: issue.severity, // Start with first severity seen
             affectedEntities: new Set(issue.affectedEntities || []),
           };
         } else {
           // Combine affected entities
-          (issue.affectedEntities || []).forEach(e => acc[issue.type].affectedEntities.add(e));
+          (issue.affectedEntities || []).forEach(e => acc[groupType].affectedEntities.add(e));
           // Escalate to highest severity seen across all issues of this type
-          const currentRank = SEVERITY_RANK[acc[issue.type].severity] ?? 4;
+          const currentRank = SEVERITY_RANK[acc[groupType].severity] ?? 4;
           const newRank = SEVERITY_RANK[issue.severity] ?? 4;
           if (newRank < currentRank) {
-            acc[issue.type].severity = issue.severity;
+            acc[groupType].severity = issue.severity;
           }
         }
         return acc;
@@ -1056,6 +1074,14 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
           conversion: "High",
           paid: "High risk",
           action: "Remove supplier shipping notices, factory codes, or AliExpress copy, and rewrite in your store's brand voice."
+        },
+        REPETITIVE_GENERIC_DESCRIPTION: {
+          why: "Description uses repetitive keyword patterns, repeated title phrases, identical multi-word boilerplate sequences, or copy-pasted section templates",
+          matters: "Repetitive AI or template-style content signals a lack of original brand creation, lowers customer purchase conviction, and risks search engine ranking penalties",
+          trust: "Medium",
+          conversion: "High",
+          paid: "Low ROI",
+          action: "Rewrite product descriptions with original, benefit-focused copywriting. Remove repetitive phrasing and keyword stuffing, and use varied, natural language tailored to each specific product."
         },
         VARIANT_PRICE_GAP: {
           why: "Significant price variance (3x or more) detected between variants of the same product",
@@ -1257,6 +1283,14 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
           paid: "N/A",
           action: "Configure standard Shopify product attributes (color, material, size) to power storefront filter menus."
         },
+        DELIVERY_FULFILLMENT_RISK: {
+          why: "Delivery timeline estimate is long, dispatch timeframe is unclear, tracking information is missing, or fulfillment expectations are weakly communicated",
+          matters: "Slow delivery times and unclear shipping expectations trigger payment disputes, order cancellations, chargeback risk, and reduce customer conversion",
+          trust: "Critical",
+          conversion: "Critical",
+          paid: "High bounce rate",
+          action: "Offer local fulfillment where possible, or clearly communicate dispatch and delivery expectations, estimated arrival dates, and tracking policies directly on product pages."
+        },
         DELIVERY_RISK_CRITICAL: {
           why: "Estimated shipping timeline is exceedingly long (over 21 days) or lacks tracking clarity",
           matters: "Slow delivery times trigger payment disputes, order cancellations, chargeback risk, and severely reduce customer trust",
@@ -1425,6 +1459,8 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
           // Already handled dynamically above, keep fallback empty or pass
         } else if (issueGroup.type === 'MISSING_RECOMMENDED_METAFIELDS') {
           evidence = `${affectedEntitiesArray.length} product(s) are missing recommended metafield attributes (fabric, color, age group, features).`;
+        } else if (issueGroup.type === 'DELIVERY_FULFILLMENT_RISK') {
+          evidence = `${affectedEntitiesArray.length} product(s) have delivery timeline, tracking, or fulfillment risks.`;
         } else if (issueGroup.type === 'DELIVERY_RISK_CRITICAL') {
           evidence = `${affectedEntitiesArray.length} product(s) have critical delivery risk.`;
         } else if (issueGroup.type === 'DELIVERY_RISK_HIGH') {
@@ -1484,7 +1520,7 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
         commercialRecommendations.push("Inventory patterns may reduce customer trust.");
       }
       
-      const slowShippingCount = issues.filter(i => ['DELIVERY_RISK_HIGH', 'DELIVERY_RISK_CRITICAL', 'LONG_DELIVERY_NO_COMM'].includes(i.type)).length;
+      const slowShippingCount = issues.filter(i => ['DELIVERY_FULFILLMENT_RISK', 'DELIVERY_RISK_HIGH', 'DELIVERY_RISK_CRITICAL', 'LONG_DELIVERY_NO_COMM'].includes(i.type)).length;
       if (slowShippingCount > 0) {
         commercialRecommendations.push("High shipping times can damage customer retention; improve fulfillment options.");
       }
@@ -1721,8 +1757,8 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
     let deliveryAdvisory = null;
     if (latestAudit) {
       const allIssues = latestAudit.issues || [];
-      const hasCriticalDelivery = allIssues.some(i => i.type === 'DELIVERY_RISK_CRITICAL');
-      const isDeliveryRiskOverridden = ignoredRuleTypes.has('DELIVERY_RISK_CRITICAL');
+      const hasCriticalDelivery = allIssues.some(i => i.type === 'DELIVERY_RISK_CRITICAL' || (i.type === 'DELIVERY_FULFILLMENT_RISK' && i.severity === 'CRITICAL'));
+      const isDeliveryRiskOverridden = ignoredRuleTypes.has('DELIVERY_RISK_CRITICAL') || ignoredRuleTypes.has('DELIVERY_FULFILLMENT_RISK');
       
       if (hasCriticalDelivery && isDeliveryRiskOverridden) {
         deliveryAdvisory = {
@@ -2185,6 +2221,7 @@ router.post('/overrides', authenticateFlexible, async (req, res) => {
     }
 
     const ALLOWED_OVERRIDES = [
+      'DELIVERY_FULFILLMENT_RISK', // Consolidated delivery & fulfillment risk
       'UNREALISTIC_INVENTORY',
       'UNIFORM_INVENTORY',
       'DELIVERY_RISK_CRITICAL',   // Merchants can acknowledge as intentional (dropshipping / made-to-order)
