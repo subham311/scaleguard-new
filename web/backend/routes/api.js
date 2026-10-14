@@ -1788,7 +1788,7 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
     const PLAN_LIMITS = {
       LIGHT: { maxProducts: 20, imagesPerProduct: 2, scanFrequency: 'Weekly' },
       GROWTH: { maxProducts: 75, imagesPerProduct: 3, scanFrequency: 'Daily' },
-      PRO: { maxProducts: 200, imagesPerProduct: 5, scanFrequency: 'Every 3 Hours' }
+      PRO: { maxProducts: 200, imagesPerProduct: 5, scanFrequency: 'Every 12 Hours' }
     };
     const defaultLimits = PLAN_LIMITS[planName] || PLAN_LIMITS.LIGHT;
 
@@ -1835,7 +1835,7 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
       totalCatalogProducts: totalProductsCount,
       isPartialScan,
       scanLimitNotice,
-      scanFrequency: planName === 'PRO' ? 'Every 3 Hours' : planName === 'GROWTH' ? 'Daily' : 'Weekly',
+      scanFrequency: planName === 'PRO' ? 'Every 12 Hours' : planName === 'GROWTH' ? 'Daily' : 'Weekly',
       nextSyncAvailableAt,
       isCooldownActive,
       cooldownRemainingMs,

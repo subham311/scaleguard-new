@@ -60,7 +60,7 @@ const pricingPlans = [
       'Commercial Scaling Verdict',
       'Up to 200 Products Monitored',
       '4 Images Analyzed Per Product',
-      'Audits Every 3 Hours',
+      'Audits Every 12 Hours',
       'Safe-To-Scale Assessment'
     ],
     isPopular: false,

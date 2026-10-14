@@ -119,18 +119,18 @@ export default function Pricing() {
   const daysRemaining = subscription?.trialDaysRemaining ?? (trialStatus === 'NEVER_USED' ? 30 : 0);
 
   // Dynamic titles and subtitles based on trial status and active plan
-  let pageTitle = "Start Your 30-Day Free Trial";
-  let pageSubtitle = "Choose a plan to start your first audit. You won’t be charged during the 30-day free trial. Each plan controls how many products and images ScaleGuard analyzes.";
+  let pageTitle = "Start Your 30-Day Free Audit";
+  let pageSubtitle = "Choose a plan to start your first audit. You won’t be charged during the 30-day free audit. Each plan controls how many products and images ScaleGuard analyzes.";
 
   if (currentRank > 0) {
     pageTitle = "Commercial Risk Intelligence Plans";
     pageSubtitle = "Each plan controls how many products and images ScaleGuard analyzes per audit cycle.";
   } else if (trialStatus === 'REMAINING') {
-    pageTitle = "Continue Your Free Trial";
+    pageTitle = "Continue Your Free Audit";
     pageSubtitle = `Choose a plan to start your audit. You have ${daysRemaining} trial day${daysRemaining === 1 ? '' : 's'} remaining before billing starts. Each plan controls how many products and images ScaleGuard analyzes.`;
   } else if (trialStatus === 'EXPIRED') {
     pageTitle = "Choose a Plan to Continue";
-    pageSubtitle = "This store has already used its free trial. Billing will begin when you approve a plan. Each plan controls how many products and images ScaleGuard analyzes.";
+    pageSubtitle = "This store has already used its free audit. Billing will begin when you approve a plan. Each plan controls how many products and images ScaleGuard analyzes.";
   }
 
   return (
@@ -240,7 +240,7 @@ export default function Pricing() {
                   <Text as="p" variant="bodySm" tone="subdued">{isCurrentPlan ? 'Current active plan' : 'Standard monthly billing'}</Text>
                 ) : trialStatus === 'NEVER_USED' ? (
                   <div>
-                    <Text as="p" variant="bodySm" tone="success">30-day free trial included</Text>
+                    <Text as="p" variant="bodySm" tone="success">30-day free audit included</Text>
                     <Text as="p" variant="bodyXs" tone="subdued">You won’t be charged during the trial.</Text>
                   </div>
                 ) : trialStatus === 'REMAINING' ? (
@@ -250,7 +250,7 @@ export default function Pricing() {
                   </div>
                 ) : (
                   <div>
-                    <Text as="p" variant="bodySm" tone="subdued">Free trial already used</Text>
+                    <Text as="p" variant="bodySm" tone="subdued">Free audit already used</Text>
                     <Text as="p" variant="bodyXs" tone="subdued">Billing begins when you approve a plan.</Text>
                   </div>
                 )}

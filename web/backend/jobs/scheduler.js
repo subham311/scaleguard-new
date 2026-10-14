@@ -13,10 +13,10 @@ const JOB_TYPES = {
 export function startScheduler() {
   console.log('📅 Starting tier-based job scheduler...');
 
-  // 1. Every 3 Hours: 'FASTER' (PRO Plan) - "3-hourly sync"
-  // Runs every 3 hours
-  cron.schedule('0 */3 * * *', async () => {
-    console.log('⏰ 3-Hourly scheduler triggered (FASTER scan frequency)');
+  // 1. Every 12 Hours: 'FASTER' (PRO Plan) - "12-hourly sync"
+  // Runs every 12 hours
+  cron.schedule('0 */12 * * *', async () => {
+    console.log('⏰ 12-Hourly scheduler triggered (FASTER scan frequency)');
     await scheduleDataSyncs('FASTER');
   });
 
@@ -71,7 +71,7 @@ async function scheduleDataSyncs(targetFrequency) {
         const frequency = plan?.scanFrequency || 'WEEKLY';
 
         // ── Trial-Safe Limit: trial shops always use WEEKLY (daily/manual scanning) ──
-        // During a free trial, skip heavy recurring scans (FASTER = every 3h, CONTINUOUS = daily).
+        // During a free trial, skip heavy recurring scans (FASTER = every 12h, CONTINUOUS = daily).
         // Trial shops can still run manual syncs from the dashboard at any time.
         const trialEndsAt = shop.subscription?.trialEndsAt;
         const isTrial = trialEndsAt ? new Date(trialEndsAt) > new Date() : false;

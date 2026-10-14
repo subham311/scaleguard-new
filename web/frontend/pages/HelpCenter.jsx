@@ -495,7 +495,7 @@ export default function HelpCenter() {
                     />
                     <FAQRow 
                       question="How frequently should I run an audit?" 
-                      answer="Active subscribers can run manual syncs from the dashboard. Delta-monitoring also triggers background audits automatically depending on your plan tier (Weekly for Light, Daily for Growth, and every 3 Hours for Pro)."
+                      answer="Active subscribers can run manual syncs from the dashboard. Delta-monitoring also triggers background audits automatically depending on your plan tier (Weekly for Light, Daily for Growth, and every 12 Hours for Pro)."
                     />
                     <FAQRow 
                       question="What is a 'Spec Dump' description?" 
