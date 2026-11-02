@@ -515,42 +515,10 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
 
     const plan = subscription?.pricingPlan;
 
-    // ── Trial-Safe Limits ───────────────────────────────────────────────────
-    const trialEndsAt = subscription?.trialEndsAt;
-    const isTrial = trialEndsAt ? new Date(trialEndsAt) > new Date() : false;
-    const isExtendedDomain = isExtendedTrialDomain(shop.shopDomain);
-
-    // Trial product caps per plan (reduced vs full paid limits)
-    const TRIAL_PRODUCT_CAPS = { LIGHT: 20, GROWTH: 50, PRO: 100 };
-    const dashPlanName = (subscription?.plan || 'LIGHT').toUpperCase();
-    const dashTrialCap = TRIAL_PRODUCT_CAPS[dashPlanName] || 20;
-    const fullProductLimit = plan?.maxProducts || 50;
-    const effectiveDashProductLimit = (isTrial && !isExtendedDomain)
-      ? Math.min(fullProductLimit, dashTrialCap)
-      : fullProductLimit;
-
-    // Days remaining in trial (for dashboard display)
-    const trialDaysRemaining = isTrial
-      ? Math.max(0, Math.ceil((new Date(trialEndsAt) - new Date()) / (1000 * 60 * 60 * 24)))
-      : 0;
-
-    let trialStatus = 'NEVER_USED';
-    if (trialEndsAt) {
-      trialStatus = isTrial ? 'REMAINING' : 'EXPIRED';
-    }
-
-    const trialInfo = isTrial
-      ? {
-          isTrial: true,
-          trialStatus,
-          trialEndsAt,
-          daysRemaining: trialDaysRemaining,
-          trialProductCap: isExtendedDomain ? fullProductLimit : dashTrialCap,
-          isExtendedAccess: isExtendedDomain,
-          aiEnabled: false,
-          scanFrequency: 'Daily / Manual (Trial Safe)',
-        }
-      : null;
+    // ── Phase 3.5: Subscription Status & Audit Scopes ─────────────────────────
+    const isSubscribed = subscription?.status === 'ACTIVE';
+    const effectiveDashProductLimit = isSubscribed ? (plan?.maxProducts || 50) : 20;
+    const trialInfo = null; // Phase 3.5: Trial system removed in favor of Free Audit
 
     // 1. Get the latest completed AuditRun
     const latestAudit = await prisma.auditRun.findFirst({
@@ -1503,6 +1471,41 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
         return (b.affectedCount || 0) - (a.affectedCount || 0);
       });
 
+      // ── Phase 3.5: Free Audit 10-Finding Paywall Enforcement ───────────────
+      // The first 10 issues are fully unlocked with recommendations, reason, and affected products.
+      // From issue #11 onward (index >= 10), findings are locked until subscription is active.
+      if (!isSubscribed) {
+        issuesList = issuesList.map((issue, idx) => {
+          if (idx < 10) {
+            return {
+              ...issue,
+              isLocked: false,
+              findingNumber: idx + 1,
+            };
+          }
+          return {
+            id: issue.id,
+            type: issue.type,
+            rawType: issue.rawType,
+            severity: issue.severity,
+            impactBucket: issue.impactBucket,
+            affectedCount: issue.affectedCount,
+            isLocked: true,
+            findingNumber: idx + 1,
+            recommendation: "Choose a plan to unlock your full audit, detailed recommendations and ongoing monitoring.",
+            evidence: "Detailed diagnostic evidence locked under Free Audit.",
+            items: [],
+            affectedProductTitles: [],
+          };
+        });
+      } else {
+        issuesList = issuesList.map((issue, idx) => ({
+          ...issue,
+          isLocked: false,
+          findingNumber: idx + 1,
+        }));
+      }
+
       // ── 7.2 COMMERCIAL RECOMMENDATIONS ────────────────────────────────────
       commercialRecommendations = [];
       
@@ -1823,7 +1826,7 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
     const totalProductsCount = shop.totalProductsCount || products.length;
     const isPartialScan = totalProductsCount > products.length;
     const scanLimitNotice = isPartialScan
-      ? `${products.length} of ${totalProductsCount} products scanned under ${planName} ${isTrial ? 'Trial' : 'Plan'}. Upgrade to Growth or Pro to scan more products.`
+      ? `${products.length} of ${totalProductsCount} products scanned under ${isSubscribed ? `${planName} Plan` : 'Free Audit'}. Upgrade to Growth or Pro to scan more products.`
       : null;
 
     // Plan details for dashboard visibility
@@ -1852,16 +1855,14 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
 
     const enrichedSubscription = subscription ? {
       ...subscription,
-      trialStatus,
-      trialDaysRemaining: isTrial ? trialDaysRemaining : (trialEndsAt ? 0 : 30),
-      hasUsedTrial: Boolean(trialEndsAt && !isTrial),
+      isSubscribed,
+      status: subscription.status,
+      plan: subscription.plan,
     } : {
       status: 'NONE',
       plan: null,
       chargeId: null,
-      trialStatus: 'NEVER_USED',
-      trialDaysRemaining: 30,
-      hasUsedTrial: false,
+      isSubscribed: false,
     };
 
     res.json({
@@ -1872,7 +1873,9 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
         totalProductsCount: shop.totalProductsCount || 0,
       },
       subscription: enrichedSubscription,
-      trialInfo,
+      isSubscribed,
+      hasUsedFreeAudit: Boolean(shop.hasUsedFreeAudit),
+      trialInfo: null,
       verdict: latestAudit ? verdict : 'Waiting for Sync',
       storeRecommendation: latestAudit ? storeRecommendation : 'Initial audit required to determine readiness.',
       storeReadinessNarrative: storeReadinessNarrative,
@@ -1886,6 +1889,7 @@ router.get('/dashboard', authenticateFlexible, async (req, res) => {
       quickWins: latestAudit ? quickWins : [],
       highImpactFixes: latestAudit ? highImpactFixes : [],
       issues: issuesList,
+      storefrontAudit: latestAudit?.storefrontAudit || null,
       products: productBreakdown,
       plan: planDetails.plan,
       planDetails,

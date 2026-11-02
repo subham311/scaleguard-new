@@ -263,14 +263,8 @@ export default function Dashboard() {
 
 
 
-  useEffect(() => {
-    if (!isLoading) {
-      const status = data?.subscription?.status;
-      if (status !== "ACTIVE" && status !== "PENDING") {
-        navigate("/", { replace: true });
-      }
-    }
-  }, [data, isLoading, navigate]);
+  const [isPaywallOpen, setIsPaywallOpen] = useState(false);
+  const [expandedStorefrontFindings, setExpandedStorefrontFindings] = useState({});
 
   const latestJobStatus = data?.planDetails?.latestJob?.status;
   const isCooldownActive = data?.planDetails?.isCooldownActive;
@@ -361,7 +355,7 @@ export default function Dashboard() {
     );
   }
 
-  if (status !== "ACTIVE" && status !== "PENDING") return null;
+  if (status !== "ACTIVE" && status !== "PENDING" && status !== "NONE") return null;
 
   const scoreMetrics = [
     {
@@ -450,7 +444,7 @@ export default function Dashboard() {
             <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
               <span style={{ fontSize: "16px" }}>ℹ️</span>
               <span style={{ fontSize: "13px", color: colors.textPrimary, fontWeight: 500 }}>
-                <strong>{data.planDetails.productsAnalyzed} of {data.shop?.totalProductsCount || data.planDetails.totalCatalogProducts} products scanned under {data.planDetails.plan} {data.trialInfo?.isTrial ? 'Trial' : 'Plan'}.</strong> Upgrade to Growth or Pro to scan more products.
+                <strong>{data.planDetails.productsAnalyzed} of {data.shop?.totalProductsCount || data.planDetails.totalCatalogProducts} products scanned under {data?.isSubscribed ? `${data.planDetails.plan} Plan` : 'Free Audit'}.</strong> Upgrade to Growth or Pro to scan more products.
               </span>
             </div>
             <button
@@ -491,7 +485,7 @@ export default function Dashboard() {
           }}>
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
               <span style={{ fontSize: "14px", fontWeight: 700, color: colors.textPrimary }}>Active Plan:</span>
-              <Badge status="success">{data.planDetails.plan} Tier</Badge>
+              <Badge status={data?.isSubscribed ? "success" : "info"}>{data?.isSubscribed ? `${data.planDetails.plan} Tier` : "Free Audit"}</Badge>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: "24px" }}>
               <div style={{ display: "flex", flexDirection: "column" }}>
@@ -499,7 +493,7 @@ export default function Dashboard() {
                 <span style={{ fontSize: "13px", fontWeight: 500, color: colors.textPrimary, marginTop: "2px" }}>
                   {(data?.planDetails?.isPartialScan || ((data?.shop?.totalProductsCount || 0) > (data?.planDetails?.productsAnalyzed || 0))) ? (
                     <>
-                      Scanned: <strong style={{ fontWeight: 700 }}>{data.planDetails.productsAnalyzed} of {data?.shop?.totalProductsCount || data.planDetails.totalCatalogProducts}</strong> products ({data.planDetails.plan} {data?.trialInfo?.isTrial ? 'Trial' : 'Plan'} limit)
+                      Scanned: <strong style={{ fontWeight: 700 }}>{data.planDetails.productsAnalyzed} of {data?.shop?.totalProductsCount || data.planDetails.totalCatalogProducts}</strong> products ({data?.isSubscribed ? `${data.planDetails.plan} limit` : 'Free Audit cap'})
                     </>
                   ) : (
                     <>
@@ -526,75 +520,49 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* ── Trial-Safe Limits Banner ── */}
-        {data?.trialInfo?.isTrial && (
+        {/* ── Free Audit Banner ── */}
+        {!data?.isSubscribed && (
           <div style={{
-            background: "#FFFBF0",
-            border: "1px solid #FFC40040",
+            background: "#F4F7FB",
+            border: "1px solid #1865C230",
             borderRadius: radius.md,
             padding: "14px 20px",
             marginBottom: "20px",
             boxShadow: shadow.card,
             display: "flex",
-            alignItems: "flex-start",
+            alignItems: "center",
+            justifyContent: "space-between",
             gap: "12px",
+            flexWrap: "wrap",
           }}>
-            <span style={{ fontSize: "18px", flexShrink: 0, marginTop: "1px" }}>🔒</span>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: "13px", fontWeight: 700, color: "#7A5400", marginBottom: "4px" }}>
-                Free Trial Active
-                {data.trialInfo.daysRemaining > 0 && (
-                  <span style={{
-                    marginLeft: "10px",
-                    fontSize: "11px",
-                    fontWeight: 600,
-                    color: "#995200",
-                    background: "#FFF0C0",
-                    border: "1px solid #FFC40040",
-                    borderRadius: "20px",
-                    padding: "2px 10px",
-                  }}>
-                    {data.trialInfo.daysRemaining} day{data.trialInfo.daysRemaining !== 1 ? "s" : ""} remaining
-                  </span>
-                )}
-              </div>
-              <div style={{ fontSize: "13px", color: "#7A5400", lineHeight: "1.6" }}>
-                Your store audit is running with trial-safe limits. ScaleGuard will still show your main trust, catalog and conversion risks.{" "}
-                <span style={{ fontWeight: 600 }}>
-                  Paid plans unlock full product coverage, deeper monitoring and advanced commercial intelligence.
-                </span>
-              </div>
-              {data.trialInfo.trialProductCap && (
-                <div style={{
-                  marginTop: "8px",
-                  display: "flex",
-                  flexWrap: "wrap",
-                  gap: "16px",
-                  fontSize: "12px",
-                  color: "#995200",
-                }}>
-                  <span>📦 Products monitored: <strong>up to {data.trialInfo.trialProductCap}</strong></span>
-                  <span>🔁 Scan frequency: <strong>{data.trialInfo.scanFrequency}</strong></span>
-                  <span>🤖 AI intelligence: <strong>Enabled on paid plan</strong></span>
+            <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+              <span style={{ fontSize: "20px" }}>📊</span>
+              <div>
+                <div style={{ fontSize: "14px", fontWeight: 700, color: colors.textPrimary, marginBottom: "2px" }}>
+                  Free Store Audit Active
                 </div>
-              )}
+                <div style={{ fontSize: "12px", color: colors.textSecondary }}>
+                  Showing store readiness metrics and your first 10 unlocked findings. Upgrade to unlock all {issues.length} detected findings and 12-hour continuous monitoring.
+                </div>
+              </div>
             </div>
             <button
-              onClick={() => navigate("/")}
+              onClick={() => setIsPaywallOpen(true)}
               style={{
                 flexShrink: 0,
                 fontSize: "12px",
                 fontWeight: 700,
-                color: "#5C6AC4",
-                background: "transparent",
-                border: "1px solid #5C6AC430",
+                color: "#ffffff",
+                background: colors.accent,
+                border: "none",
                 borderRadius: "8px",
-                padding: "6px 14px",
+                padding: "8px 16px",
                 cursor: "pointer",
                 whiteSpace: "nowrap",
+                boxShadow: "0 2px 4px rgba(92,106,196,0.2)",
               }}
             >
-              Upgrade Plan
+              Unlock Full Audit
             </button>
           </div>
         )}
@@ -1032,6 +1000,188 @@ export default function Dashboard() {
             </div>
           </Layout.Section>
 
+          {/* ── Homepage Storefront Intelligence (Phase 3.5) ── */}
+          {data?.storefrontAudit && (
+            <Layout.Section>
+              <div style={{
+                background: colors.surface,
+                borderRadius: radius.lg,
+                border: `1px solid ${colors.border}`,
+                boxShadow: shadow.card,
+                padding: "24px",
+                marginBottom: "24px",
+              }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "16px", marginBottom: "20px" }}>
+                  <div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "6px" }}>
+                      <span style={{ fontSize: "22px" }}>🌐</span>
+                      <span style={{ fontSize: "18px", fontWeight: 700, color: colors.textPrimary }}>
+                        Homepage Storefront Intelligence
+                      </span>
+                      <span style={{
+                        fontSize: "11px",
+                        fontWeight: 700,
+                        padding: "3px 10px",
+                        borderRadius: "14px",
+                        background: data.storefrontAudit.verdictBadge === "success" ? colors.successBg : data.storefrontAudit.verdictBadge === "attention" ? colors.warningBg : colors.criticalBg,
+                        color: data.storefrontAudit.verdictBadge === "success" ? colors.success : data.storefrontAudit.verdictBadge === "attention" ? colors.warning : colors.critical,
+                      }}>
+                        {data.storefrontAudit.overallVerdict}
+                      </span>
+                    </div>
+                    <p style={{ fontSize: "13px", color: colors.textSecondary, margin: 0 }}>
+                      Live customer-facing storefront analysis of your homepage evaluating value proposition, CTA visibility, trust policies, and SEO fundamentals.
+                    </p>
+                  </div>
+
+                  <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontSize: "11px", fontWeight: 600, color: colors.textSecondary, textTransform: "uppercase" }}>Storefront Score</div>
+                      <div style={{ fontSize: "28px", fontWeight: 800, color: colors.accent, lineHeight: "1" }}>
+                        {data.storefrontAudit.overallScore}<span style={{ fontSize: "14px", color: colors.textSecondary, fontWeight: 500 }}>/100</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Dimensions Grid */}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: "12px", marginBottom: "20px" }}>
+                  <div style={{ background: colors.surfaceAlt, padding: "12px 14px", borderRadius: radius.md, border: `1px solid ${colors.border}` }}>
+                    <div style={{ fontSize: "11px", fontWeight: 700, color: colors.textSecondary, marginBottom: "4px" }}>🌟 Hero & Value Prop</div>
+                    <div style={{ fontSize: "16px", fontWeight: 700, color: colors.textPrimary }}>
+                      {data.storefrontAudit.scoresBreakdown?.heroAndValueProp?.score ?? 0} / 25
+                    </div>
+                    <div style={{ fontSize: "11px", color: colors.textSecondary, marginTop: "2px" }}>
+                      {data.storefrontAudit.heroSnapshot?.headlineDetected ? "Headline detected" : "Headline missing"}
+                    </div>
+                  </div>
+
+                  <div style={{ background: colors.surfaceAlt, padding: "12px 14px", borderRadius: radius.md, border: `1px solid ${colors.border}` }}>
+                    <div style={{ fontSize: "11px", fontWeight: 700, color: colors.textSecondary, marginBottom: "4px" }}>⚡ CTA & Conversion</div>
+                    <div style={{ fontSize: "16px", fontWeight: 700, color: colors.textPrimary }}>
+                      {data.storefrontAudit.scoresBreakdown?.ctaAndConversion?.score ?? 0} / 20
+                    </div>
+                    <div style={{ fontSize: "11px", color: colors.textSecondary, marginTop: "2px" }}>
+                      {data.storefrontAudit.heroSnapshot?.primaryCtaDetected ? `"${data.storefrontAudit.heroSnapshot.primaryCtaText || 'CTA'}"` : "Missing button"}
+                    </div>
+                  </div>
+
+                  <div style={{ background: colors.surfaceAlt, padding: "12px 14px", borderRadius: radius.md, border: `1px solid ${colors.border}` }}>
+                    <div style={{ fontSize: "11px", fontWeight: 700, color: colors.textSecondary, marginBottom: "4px" }}>🛡️ Trust Policies</div>
+                    <div style={{ fontSize: "16px", fontWeight: 700, color: colors.textPrimary }}>
+                      {data.storefrontAudit.scoresBreakdown?.trustAndPolicies?.score ?? 0} / 25
+                    </div>
+                    <div style={{ fontSize: "11px", color: colors.textSecondary, marginTop: "2px" }}>
+                      {data.storefrontAudit.trustSnapshot?.refundPolicy && data.storefrontAudit.trustSnapshot?.shippingPolicy ? "Refund & Shipping OK" : "Policies missing"}
+                    </div>
+                  </div>
+
+                  <div style={{ background: colors.surfaceAlt, padding: "12px 14px", borderRadius: radius.md, border: `1px solid ${colors.border}` }}>
+                    <div style={{ fontSize: "11px", fontWeight: 700, color: colors.textSecondary, marginBottom: "4px" }}>⭐ Social Proof</div>
+                    <div style={{ fontSize: "16px", fontWeight: 700, color: colors.textPrimary }}>
+                      {data.storefrontAudit.scoresBreakdown?.socialProof?.score ?? 0} / 15
+                    </div>
+                    <div style={{ fontSize: "11px", color: colors.textSecondary, marginTop: "2px" }}>
+                      {data.storefrontAudit.trustSnapshot?.socialProofDetected ? "Reviews detected" : "No reviews found"}
+                    </div>
+                  </div>
+
+                  <div style={{ background: colors.surfaceAlt, padding: "12px 14px", borderRadius: radius.md, border: `1px solid ${colors.border}` }}>
+                    <div style={{ fontSize: "11px", fontWeight: 700, color: colors.textSecondary, marginBottom: "4px" }}>🔎 SEO Basics</div>
+                    <div style={{ fontSize: "16px", fontWeight: 700, color: colors.textPrimary }}>
+                      {data.storefrontAudit.scoresBreakdown?.seoFoundation?.score ?? 0} / 15
+                    </div>
+                    <div style={{ fontSize: "11px", color: colors.textSecondary, marginTop: "2px" }}>
+                      {data.storefrontAudit.seoSnapshot?.h1Count === 1 ? "1 H1 tag (optimal)" : `${data.storefrontAudit.seoSnapshot?.h1Count || 0} H1 tags`}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Storefront Findings List */}
+                <div>
+                  <div style={{ fontSize: "14px", fontWeight: 700, color: colors.textPrimary, marginBottom: "12px" }}>
+                    Storefront Diagnostic Recommendations ({data.storefrontAudit.findings?.length || 0})
+                  </div>
+
+                  {(!data.storefrontAudit.findings || data.storefrontAudit.findings.length === 0) ? (
+                    <div style={{ padding: "16px 20px", textAlign: "center", background: colors.surfaceAlt, borderRadius: radius.md, color: colors.success, fontSize: "13px", fontWeight: 600 }}>
+                      🎉 Excellent! Your live homepage meets all trust, SEO, and visual presentation standards.
+                    </div>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                      {data.storefrontAudit.findings.map((finding, fIdx) => {
+                        const fKey = `sf_${fIdx}`;
+                        const isFExpanded = expandedStorefrontFindings[fKey] ?? (finding.severity === "CRITICAL" || finding.severity === "HIGH");
+                        const fCfg = SEVERITY_CONFIG[finding.severity?.toUpperCase()] || SEVERITY_CONFIG.LOW;
+
+                        return (
+                          <div key={fKey} style={{ border: `1px solid ${colors.border}`, borderRadius: radius.md, overflow: "hidden", background: colors.surface }}>
+                            <div
+                              onClick={() => setExpandedStorefrontFindings(prev => ({ ...prev, [fKey]: !isFExpanded }))}
+                              style={{
+                                padding: "14px 16px",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "space-between",
+                                gap: "12px",
+                                cursor: "pointer",
+                                background: isFExpanded ? colors.surfaceAlt : colors.surface,
+                              }}
+                            >
+                              <div style={{ display: "flex", alignItems: "center", gap: "10px", flex: 1, minWidth: 0 }}>
+                                <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: fCfg.dot, flexShrink: 0 }} />
+                                <div style={{ fontSize: "13px", fontWeight: 700, color: colors.textPrimary }}>
+                                  {finding.title}
+                                </div>
+                              </div>
+                              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                                <SeverityPill severity={finding.severity} />
+                                <span style={{ fontSize: "12px", color: colors.textSecondary }}>{isFExpanded ? "▲" : "▼"}</span>
+                              </div>
+                            </div>
+
+                            {isFExpanded && (
+                              <div style={{ padding: "16px 20px", background: colors.surfaceAlt, borderTop: `1px solid ${colors.border}` }}>
+                                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "12px" }}>
+                                  <div style={{ background: colors.surface, padding: "12px 14px", borderRadius: radius.sm, border: `1px solid ${colors.border}` }}>
+                                    <div style={{ fontSize: "11px", fontWeight: 700, color: colors.textSecondary, textTransform: "uppercase", marginBottom: "4px" }}>
+                                      What was detected
+                                    </div>
+                                    <div style={{ fontSize: "12px", color: colors.textPrimary, lineHeight: "1.5" }}>
+                                      {finding.detected}
+                                    </div>
+                                  </div>
+
+                                  <div style={{ background: colors.surface, padding: "12px 14px", borderRadius: radius.sm, border: `1px solid ${colors.border}` }}>
+                                    <div style={{ fontSize: "11px", fontWeight: 700, color: colors.textSecondary, textTransform: "uppercase", marginBottom: "4px" }}>
+                                      Why it matters
+                                    </div>
+                                    <div style={{ fontSize: "12px", color: colors.textPrimary, lineHeight: "1.5" }}>
+                                      {finding.whyItMatters}
+                                    </div>
+                                  </div>
+
+                                  <div style={{ background: "#F0F9F5", padding: "12px 14px", borderRadius: radius.sm, border: "1px solid #00806030" }}>
+                                    <div style={{ fontSize: "11px", fontWeight: 700, color: colors.success, textTransform: "uppercase", marginBottom: "4px" }}>
+                                      What to improve
+                                    </div>
+                                    <div style={{ fontSize: "12px", color: colors.textPrimary, lineHeight: "1.5", fontWeight: 500 }}>
+                                      {finding.recommendation}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </Layout.Section>
+          )}
+
           {/* ── Impact Buckets ── */}
           {impactBucketSummary && impactBucketSummary.length > 0 && (
             <Layout.Section>
@@ -1129,34 +1279,62 @@ export default function Dashboard() {
                 <div>
                   {issues.map((item, idx) => {
                     const { id, type, severity, recommendation, affectedCount, items, affectedProductTitles } = item;
-                    const isExpanded = expandedIssues[id];
+                    const isLocked = item.isLocked || (!data?.isSubscribed && idx >= 10);
+                    const isExpanded = isLocked ? false : expandedIssues[id];
                     const cfg = SEVERITY_CONFIG[severity?.toUpperCase()] || SEVERITY_CONFIG.LOW;
                     const parsedRec = parseRecommendation(recommendation);
 
                     return (
-                      <div key={id} style={{ borderBottom: idx < issues.length - 1 ? `1px solid ${colors.border}` : "none" }}>
+                      <div key={id || idx} style={{ borderBottom: idx < issues.length - 1 ? `1px solid ${colors.border}` : "none" }}>
                         <div
-                          onClick={() => toggleIssueExpansion(id)}
+                          onClick={() => {
+                            if (isLocked) {
+                              setIsPaywallOpen(true);
+                            } else {
+                              toggleIssueExpansion(id);
+                            }
+                          }}
                           style={{
                             padding: "16px 20px",
                             display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px",
                             cursor: "pointer",
-                            background: isExpanded ? colors.surfaceAlt : "transparent",
+                            background: isLocked ? "#FAFBFD" : (isExpanded ? colors.surfaceAlt : "transparent"),
                             transition: "background 0.15s ease",
                           }}
                         >
                           <div style={{ display: "flex", alignItems: "center", gap: "12px", flex: 1, minWidth: 0 }}>
                             <div style={{
                               width: "8px", height: "8px", borderRadius: "50%",
-                              background: cfg.dot, flexShrink: 0,
+                              background: isLocked ? colors.textMuted : cfg.dot, flexShrink: 0,
                             }} />
                             <div style={{ minWidth: 0, flex: 1 }}>
-                              <div style={{ fontSize: "14px", fontWeight: 700, color: colors.textPrimary, marginBottom: "2px" }}>{type}</div>
+                              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                <span style={{ fontSize: "14px", fontWeight: 700, color: isLocked ? colors.textSecondary : colors.textPrimary }}>
+                                  #{idx + 1} {type}
+                                </span>
+                                {isLocked && (
+                                  <span style={{
+                                    fontSize: "11px",
+                                    fontWeight: 700,
+                                    padding: "2px 8px",
+                                    borderRadius: "10px",
+                                    background: "#FFF4DB",
+                                    color: "#995200",
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    gap: "4px"
+                                  }}>
+                                    🔒 Locked (Free Audit)
+                                  </span>
+                                )}
+                              </div>
                               <div style={{
                                 fontSize: "12px", color: colors.textSecondary, lineHeight: "1.4",
-                                whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis"
+                                whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                                filter: isLocked ? "blur(2.5px)" : "none",
+                                userSelect: isLocked ? "none" : "auto",
                               }}>
-                                {parsedRec.shortSummary}
+                                {isLocked ? "Detailed diagnosis, root causes, business impact, and recommendations locked under Free Audit." : parsedRec.shortSummary}
                               </div>
                             </div>
                           </div>
@@ -1169,19 +1347,45 @@ export default function Dashboard() {
                               {affectedCount} affected product{affectedCount !== 1 ? 's' : ''}
                             </span>
                             <SeverityPill severity={severity} />
-                            <span style={{
-                              width: "24px", height: "24px", borderRadius: "50%",
-                              background: colors.accentLight, color: colors.accent,
-                              display: "flex", alignItems: "center", justifyContent: "center",
-                              fontSize: "13px", fontWeight: 700,
-                              transform: isExpanded ? "rotate(180deg)" : "rotate(0deg)",
-                              transition: "transform 0.2s ease",
-                            }}>
-                              ⌄
-                            </span>
+                            {isLocked ? (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setIsPaywallOpen(true);
+                                }}
+                                style={{
+                                  background: colors.accent,
+                                  color: "#ffffff",
+                                  border: "none",
+                                  borderRadius: "6px",
+                                  padding: "5px 12px",
+                                  fontSize: "12px",
+                                  fontWeight: 600,
+                                  cursor: "pointer",
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: "4px",
+                                  boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+                                }}
+                              >
+                                🔒 Unlock
+                              </button>
+                            ) : (
+                              <span style={{
+                                width: "24px", height: "24px", borderRadius: "50%",
+                                background: colors.accentLight, color: colors.accent,
+                                display: "flex", alignItems: "center", justifyContent: "center",
+                                fontSize: "13px", fontWeight: 700,
+                                transform: isExpanded ? "rotate(180deg)" : "rotate(0deg)",
+                                transition: "transform 0.2s ease",
+                              }}>
+                                ⌄
+                              </span>
+                            )}
                           </div>
                         </div>
 
+                        {!isLocked && (
                         <Collapsible open={isExpanded} id={id}>
                           <div style={{
                             padding: "0 20px 16px 44px",
@@ -1422,6 +1626,7 @@ export default function Dashboard() {
                             </div>
                           </div>
                         </Collapsible>
+                        )}
                       </div>
                     );
                   })}
@@ -1634,6 +1839,232 @@ export default function Dashboard() {
         {/* Bottom spacing */}
         <div style={{ height: "32px" }} />
       </Page>
+
+      {/* ── Phase 3.5 Paywall Modal ── */}
+      {isPaywallOpen && (
+        <div style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: "rgba(0, 0, 0, 0.65)",
+          zIndex: 99999,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: "20px",
+          backdropFilter: "blur(4px)",
+        }}>
+          <div style={{
+            backgroundColor: "#ffffff",
+            borderRadius: radius.lg,
+            maxWidth: "700px",
+            width: "100%",
+            maxHeight: "90vh",
+            overflowY: "auto",
+            boxShadow: "0 24px 48px rgba(0, 0, 0, 0.2)",
+            border: `1px solid ${colors.border}`,
+            padding: "32px",
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px" }}>
+              <div>
+                <span style={{
+                  display: "inline-block",
+                  fontSize: "11px",
+                  fontWeight: 700,
+                  color: colors.accent,
+                  background: colors.accentLight,
+                  padding: "3px 10px",
+                  borderRadius: "20px",
+                  marginBottom: "8px",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.04em",
+                }}>
+                  ScaleGuard Intelligence
+                </span>
+                <h2 style={{ fontSize: "22px", fontWeight: 700, color: colors.textPrimary, margin: "0 0 6px" }}>
+                  Unlock Your Full Audit & Recommendations
+                </h2>
+                <p style={{ fontSize: "14px", color: colors.textSecondary, margin: 0, lineHeight: "1.5" }}>
+                  Choose a plan to unlock your full audit, detailed recommendations and ongoing monitoring.
+                </p>
+              </div>
+              <button
+                onClick={() => setIsPaywallOpen(false)}
+                style={{
+                  background: "none",
+                  border: "none",
+                  fontSize: "22px",
+                  cursor: "pointer",
+                  color: colors.textSecondary,
+                  padding: "4px",
+                  lineHeight: 1,
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))",
+              gap: "16px",
+              margin: "24px 0"
+            }}>
+              {/* Light */}
+              <div style={{
+                border: `1px solid ${colors.border}`,
+                borderRadius: radius.md,
+                padding: "20px 16px",
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "space-between",
+                background: colors.surfaceAlt,
+              }}>
+                <div>
+                  <div style={{ fontSize: "16px", fontWeight: 700, color: colors.textPrimary }}>Light</div>
+                  <div style={{ fontSize: "22px", fontWeight: 800, color: colors.textPrimary, margin: "6px 0 12px" }}>
+                    $19.99<span style={{ fontSize: "12px", color: colors.textSecondary, fontWeight: "normal" }}>/mo</span>
+                  </div>
+                  <ul style={{ fontSize: "12px", color: colors.textSecondary, paddingLeft: "16px", margin: 0, lineHeight: "1.7" }}>
+                    <li>Unlock all {issues.length} audit findings</li>
+                    <li>Up to 20 products monitored</li>
+                    <li>Weekly recurring scans</li>
+                    <li>Product-level recommendations</li>
+                  </ul>
+                </div>
+                <button
+                  onClick={() => { setIsPaywallOpen(false); navigate("/Pricing"); }}
+                  style={{
+                    marginTop: "20px",
+                    padding: "9px 14px",
+                    borderRadius: radius.sm,
+                    background: colors.surface,
+                    border: `1px solid ${colors.border}`,
+                    fontSize: "12px",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    color: colors.textPrimary,
+                    width: "100%",
+                  }}
+                >
+                  Choose Light
+                </button>
+              </div>
+
+              {/* Growth */}
+              <div style={{
+                border: `2px solid ${colors.accent}`,
+                borderRadius: radius.md,
+                padding: "20px 16px",
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "space-between",
+                background: "#FFFFFF",
+                boxShadow: shadow.card,
+                position: "relative",
+              }}>
+                <div style={{
+                  position: "absolute", top: "-10px", right: "12px",
+                  background: colors.accent, color: "#fff",
+                  fontSize: "10px", fontWeight: 700, padding: "2px 8px", borderRadius: "10px"
+                }}>
+                  Popular
+                </div>
+                <div>
+                  <div style={{ fontSize: "16px", fontWeight: 700, color: colors.textPrimary }}>Growth</div>
+                  <div style={{ fontSize: "22px", fontWeight: 800, color: colors.accent, margin: "6px 0 12px" }}>
+                    $49.99<span style={{ fontSize: "12px", color: colors.textSecondary, fontWeight: "normal" }}>/mo</span>
+                  </div>
+                  <ul style={{ fontSize: "12px", color: colors.textSecondary, paddingLeft: "16px", margin: 0, lineHeight: "1.7" }}>
+                    <li>Unlock all {issues.length} audit findings</li>
+                    <li>Up to 75 products monitored</li>
+                    <li>Daily continuous audits</li>
+                    <li>Priority fix queue</li>
+                  </ul>
+                </div>
+                <button
+                  onClick={() => { setIsPaywallOpen(false); navigate("/Pricing"); }}
+                  style={{
+                    marginTop: "20px",
+                    padding: "9px 14px",
+                    borderRadius: radius.sm,
+                    background: colors.accent,
+                    border: "none",
+                    fontSize: "12px",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    color: "#ffffff",
+                    width: "100%",
+                    boxShadow: "0 2px 4px rgba(92,106,196,0.3)",
+                  }}
+                >
+                  Choose Growth
+                </button>
+              </div>
+
+              {/* Pro */}
+              <div style={{
+                border: `1px solid ${colors.border}`,
+                borderRadius: radius.md,
+                padding: "20px 16px",
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "space-between",
+                background: colors.surfaceAlt,
+              }}>
+                <div>
+                  <div style={{ fontSize: "16px", fontWeight: 700, color: colors.textPrimary }}>Pro</div>
+                  <div style={{ fontSize: "22px", fontWeight: 800, color: colors.textPrimary, margin: "6px 0 12px" }}>
+                    $99.00<span style={{ fontSize: "12px", color: colors.textSecondary, fontWeight: "normal" }}>/mo</span>
+                  </div>
+                  <ul style={{ fontSize: "12px", color: colors.textSecondary, paddingLeft: "16px", margin: 0, lineHeight: "1.7" }}>
+                    <li>Unlock all {issues.length} audit findings</li>
+                    <li>Up to 200 products monitored</li>
+                    <li>12-hour continuous monitoring</li>
+                    <li>Commercial scaling verdict</li>
+                  </ul>
+                </div>
+                <button
+                  onClick={() => { setIsPaywallOpen(false); navigate("/Pricing"); }}
+                  style={{
+                    marginTop: "20px",
+                    padding: "9px 14px",
+                    borderRadius: radius.sm,
+                    background: colors.surface,
+                    border: `1px solid ${colors.border}`,
+                    fontSize: "12px",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    color: colors.textPrimary,
+                    width: "100%",
+                  }}
+                >
+                  Choose Pro
+                </button>
+              </div>
+            </div>
+
+            <div style={{ textAlign: "center", borderTop: `1px solid ${colors.border}`, paddingTop: "16px" }}>
+              <button
+                onClick={() => { setIsPaywallOpen(false); navigate("/Pricing"); }}
+                style={{
+                  background: "none",
+                  border: "none",
+                  fontSize: "13px",
+                  color: colors.accent,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  textDecoration: "underline",
+                }}
+              >
+                Compare all plan features & limits on Pricing page →
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

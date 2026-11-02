@@ -13,29 +13,26 @@ export default function HomePage() {
   const { data, isLoading } = useAuditData();
 
   useEffect(() => {
-    if (!isLoading && data?.subscription) {
-      const status = data.subscription.status;
-      const hasCharge = Boolean(data.subscription.chargeId);
-      if (status === "ACTIVE" || (status === "PENDING" && hasCharge)) {
-        // User is registered with an active/pending charge, redirect to Dashboard
+    if (!isLoading) {
+      // If store already has completed audit or active subscription, go directly to Dashboard
+      if (data?.verdict && data.verdict !== 'Waiting for Sync') {
         navigate("/Dashboard", { replace: true });
       }
     }
   }, [data, isLoading, navigate]);
 
-  // Determine trial status for dynamic onboarding wording
-  const trialStatus = data?.subscription?.trialStatus || (data?.trialInfo?.isTrial ? 'REMAINING' : 'NEVER_USED');
-  const daysRemaining = data?.subscription?.trialDaysRemaining || data?.trialInfo?.daysRemaining || 30;
+  const hasUsedFreeAudit = data?.hasUsedFreeAudit;
+  const isSubscribed = data?.isSubscribed;
 
-  let auditButtonText = "Start Free Trial & Run First Audit";
-  let trialHelperText = "30-day free trial included. You won’t be charged today.";
+  let auditButtonText = "Run Free Store Audit";
+  let helperText = "1 free initial store audit included. No credit card or upfront plan selection required.";
 
-  if (trialStatus === 'REMAINING') {
-    auditButtonText = "Continue Free Trial & Run First Audit";
-    trialHelperText = `You have ${daysRemaining} trial day${daysRemaining === 1 ? '' : 's'} remaining before billing starts.`;
-  } else if (trialStatus === 'EXPIRED') {
-    auditButtonText = "Choose Plan & Start First Audit";
-    trialHelperText = "This store has already used its free trial. Billing begins upon plan approval.";
+  if (isSubscribed) {
+    auditButtonText = "Go to Live Dashboard";
+    helperText = "Your store is enrolled in continuous commercial monitoring.";
+  } else if (hasUsedFreeAudit) {
+    auditButtonText = "View Audit Report";
+    helperText = "Review your free audit findings. Upgrade anytime to unlock all findings.";
   }
 
   if (isLoading) {
@@ -101,12 +98,12 @@ export default function HomePage() {
               ScaleGuard is the brutally honest pre-scale audit engine. We analyze your catalog health, visual trust, and consistency to give you a definitive verdict: Ready to Scale, or High Risk.
             </Text>
           </div>
-          <Button size="large" primary onClick={() => navigate("/Pricing")}>
+          <Button size="large" primary onClick={() => navigate("/Dashboard")}>
             {auditButtonText}
           </Button>
           <div style={{ marginTop: "12px" }}>
             <Text as="p" variant="bodySm" tone="subdued">
-              {trialHelperText}
+              {helperText}
             </Text>
           </div>
         </div>

@@ -197,9 +197,7 @@ router.get('/subscription', authenticateShop, async (req, res) => {
         status: 'NONE',
         plan: null,
         chargeId: null,
-        trialStatus: 'NEVER_USED',
-        trialDaysRemaining: 30,
-        hasUsedTrial: false,
+        isSubscribed: false,
       });
     }
 
@@ -350,31 +348,13 @@ router.get('/subscription', authenticateShop, async (req, res) => {
       }
     }
 
-    // Compute dynamic trial status and remaining trial days
-    let trialStatus = 'NEVER_USED';
-    let trialDaysRemaining = 30;
-
-    if (subscription.trialEndsAt) {
-      const endsAt = new Date(subscription.trialEndsAt);
-      const now = new Date();
-      if (endsAt > now) {
-        trialStatus = 'REMAINING';
-        trialDaysRemaining = Math.max(1, Math.ceil((endsAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
-      } else {
-        trialStatus = 'EXPIRED';
-        trialDaysRemaining = 0;
-      }
-    }
-
-    // Return subscription with verified status and trial metadata
-    // The UI should only show the plan when status is ACTIVE
+    // Phase 3.5: Return subscription with verified status without trial properties
+    const isSubscribed = verifiedStatus === 'ACTIVE';
     res.json({
       ...subscription,
       status: verifiedStatus,
       chargeId: verifiedChargeId || subscription.chargeId,
-      trialStatus,
-      trialDaysRemaining,
-      hasUsedTrial: trialStatus === 'EXPIRED',
+      isSubscribed,
     });
   } catch (error) {
     console.error('Get subscription error:', error);
@@ -516,33 +496,10 @@ async function handleCreateSubscription(req, res) {
       }
     `;
 
-    // Check trial status & calculate dynamic trial days
-    const existingSub = await prisma.subscription.findUnique({
-      where: { shopId: req.shop.id }
-    });
-
+    // Phase 3.5: 30-day trial system removed completely in favor of Free Audit model
     let trialDays = null;
     let newTrialEndsAt = null;
     let discount = null;
-
-    if (!existingSub || !existingSub.trialEndsAt) {
-      // 1. Brand new store: full 30-day free trial
-      trialDays = 30;
-      newTrialEndsAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-    } else {
-      const existingEndsAt = new Date(existingSub.trialEndsAt);
-      const now = new Date();
-      if (existingEndsAt > now) {
-        // 2. Reinstalling store with remaining trial days: preserve exact remaining days
-        const remainingDays = Math.max(1, Math.ceil((existingEndsAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
-        trialDays = remainingDays;
-        newTrialEndsAt = existingEndsAt;
-      } else {
-        // 3. Store already used full free trial: no trial days, standard billing begins upon approval
-        trialDays = null;
-        newTrialEndsAt = existingEndsAt; // Preserve past expiration date to prevent trial re-use
-      }
-    }
 
     const variables = {
       name: price.name,

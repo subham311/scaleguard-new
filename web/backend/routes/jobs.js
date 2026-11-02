@@ -54,6 +54,16 @@ router.post('/trigger-sync', authenticateShop, async (req, res) => {
       return res.status(404).json({ error: 'Shop not found' });
     }
 
+    const isSubscribed = shop.subscription?.status === 'ACTIVE';
+    // If shop already used their 1 Free Audit and has no active plan, block re-scan with paywall
+    if (shop.hasUsedFreeAudit && !isSubscribed) {
+      return res.status(403).json({
+        success: false,
+        error: 'PAYWALL_REQUIRED',
+        message: 'Your free initial audit has already been completed. Choose a plan to unlock ongoing monitoring and re-scans.',
+      });
+    }
+
     const planName = shop.subscription?.pricingPlan?.name?.toUpperCase() 
       || shop.subscription?.plan?.toUpperCase() 
       || 'LIGHT';

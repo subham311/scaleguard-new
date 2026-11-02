@@ -115,22 +115,13 @@ export default function Pricing() {
     : null;
   const currentRank = activePlanKey ? PLAN_LIMITS_META[activePlanKey]?.rank || 0 : 0;
 
-  const trialStatus = subscription?.trialStatus || 'NEVER_USED';
-  const daysRemaining = subscription?.trialDaysRemaining ?? (trialStatus === 'NEVER_USED' ? 30 : 0);
-
-  // Dynamic titles and subtitles based on trial status and active plan
-  let pageTitle = "Start Your 30-Day Free Audit";
-  let pageSubtitle = "Choose a plan to start your first audit. You won’t be charged during the 30-day free audit. Each plan controls how many products and images ScaleGuard analyzes.";
+  // Dynamic titles and subtitles based on subscription status
+  let pageTitle = "Choose a Plan to Unlock Your Full Audit";
+  let pageSubtitle = "Choose Light, Growth, or Pro to unlock your complete audit findings, detailed recommendations, and continuous store monitoring.";
 
   if (currentRank > 0) {
     pageTitle = "Commercial Risk Intelligence Plans";
     pageSubtitle = "Each plan controls how many products and images ScaleGuard analyzes per audit cycle.";
-  } else if (trialStatus === 'REMAINING') {
-    pageTitle = "Continue Your Free Audit";
-    pageSubtitle = `Choose a plan to start your audit. You have ${daysRemaining} trial day${daysRemaining === 1 ? '' : 's'} remaining before billing starts. Each plan controls how many products and images ScaleGuard analyzes.`;
-  } else if (trialStatus === 'EXPIRED') {
-    pageTitle = "Choose a Plan to Continue";
-    pageSubtitle = "This store has already used its free audit. Billing will begin when you approve a plan. Each plan controls how many products and images ScaleGuard analyzes.";
   }
 
   return (
@@ -159,7 +150,7 @@ export default function Pricing() {
           const meta = PLAN_LIMITS_META[plan.name] || {};
           const planRank = meta.rank || 0;
           
-          let buttonText = `Select ${plan.name}`;
+          let buttonText = `Choose ${plan.name}`;
           let isCurrentPlan = false;
           
           if (currentRank > 0) {
@@ -172,13 +163,7 @@ export default function Pricing() {
               isCurrentPlan = true;
             }
           } else {
-            if (trialStatus === 'NEVER_USED') {
-              buttonText = `Start ${plan.name} Trial`;
-            } else if (trialStatus === 'REMAINING') {
-              buttonText = `Continue ${plan.name} Trial`;
-            } else {
-              buttonText = `Select ${plan.name}`;
-            }
+            buttonText = `Choose ${plan.name}`;
           }
 
           return (
@@ -238,20 +223,9 @@ export default function Pricing() {
                 <Text as="h3" variant="heading3xl">${plan.price} <span style={{ fontSize: "16px", fontWeight: "normal", color: "var(--p-color-text-subdued)" }}>/mo</span></Text>
                 {currentRank > 0 ? (
                   <Text as="p" variant="bodySm" tone="subdued">{isCurrentPlan ? 'Current active plan' : 'Standard monthly billing'}</Text>
-                ) : trialStatus === 'NEVER_USED' ? (
-                  <div>
-                    <Text as="p" variant="bodySm" tone="success">30-day free audit included</Text>
-                    <Text as="p" variant="bodyXs" tone="subdued">You won’t be charged during the trial.</Text>
-                  </div>
-                ) : trialStatus === 'REMAINING' ? (
-                  <div>
-                    <Text as="p" variant="bodySm" tone="success">{daysRemaining} trial day{daysRemaining === 1 ? '' : 's'} remaining</Text>
-                    <Text as="p" variant="bodyXs" tone="subdued">You have {daysRemaining} trial day{daysRemaining === 1 ? '' : 's'} before billing starts.</Text>
-                  </div>
                 ) : (
                   <div>
-                    <Text as="p" variant="bodySm" tone="subdued">Free audit already used</Text>
-                    <Text as="p" variant="bodyXs" tone="subdued">Billing begins when you approve a plan.</Text>
+                    <Text as="p" variant="bodySm" tone="subdued">Billed monthly • Unlock full report</Text>
                   </div>
                 )}
               </div>

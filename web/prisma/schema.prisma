@@ -21,6 +21,7 @@ model Shop {
   
   // Billing
   subscription      Subscription?
+  hasUsedFreeAudit  Boolean   @default(false)
   
   // Analysis & Maturity
   maturityLevel     String    @default("NEW") // NEW, LEARNING, STABLE, MATURE
@@ -212,6 +213,8 @@ model AuditRun {
   catalogMaintenance      Float?
   fulfillmentTrust        Float?
   trustClassification     String?   // Excellent/Good/Fair/At Risk/High Risk
+  
+  storefrontAudit         Json?     // Homepage Storefront Intelligence results
   
   issues            Issue[]
   
