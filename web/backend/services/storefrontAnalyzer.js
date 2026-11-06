@@ -66,7 +66,23 @@ export async function analyzeStorefront(shopDomain) {
   // ─────────────────────────────────────────────────────────────────────────────
   // 1. SEO BASICS (Title, Meta Description, H1 Hierarchy)
   // ─────────────────────────────────────────────────────────────────────────────
-  const pageTitle = ($('title').first().text() || '').trim();
+  // Target document head title specifically and exclude any SVG accessibility titles
+  let pageTitle = $('head > title, head title').first().text().trim();
+  if (!pageTitle) {
+    const nonSvgTitles = $('title').filter((_, el) => $(el).parents('svg').length === 0);
+    if (nonSvgTitles.length > 0) {
+      pageTitle = $(nonSvgTitles[0]).text().trim();
+    }
+  }
+  // Fallback to og:title or twitter:title if document title is absent in head
+  if (!pageTitle) {
+    pageTitle = (
+      $('meta[property="og:title"]').attr('content') ||
+      $('meta[name="twitter:title"]').attr('content') ||
+      ''
+    ).trim();
+  }
+
   const metaDescription = (
     $('meta[name="description"]').attr('content') ||
     $('meta[property="og:description"]').attr('content') ||
@@ -86,7 +102,7 @@ export async function analyzeStorefront(shopDomain) {
       title: 'Missing Homepage Title Tag',
       category: 'SEO_BASICS',
       severity: 'HIGH',
-      detected: 'No <title> tag was found on the homepage.',
+      detected: 'No <title> tag was found in the homepage document head.',
       whyItMatters: 'Search engines and social platforms rely on title tags to understand your store. Missing titles cause ad and organic traffic drop-offs.',
       recommendation: 'In Shopify Admin, go to Online Store > Preferences and set a descriptive Home page title (between 30 and 60 characters).',
     });
@@ -168,7 +184,8 @@ export async function analyzeStorefront(shopDomain) {
   const heroSelectors = [
     '.banner', '.hero', '[class*="hero"]', '[class*="banner"]',
     '[class*="slideshow"]', 'section[id*="hero"]', 'section[id*="banner"]',
-    'main section:first-of-type', '#MainContent section:first-of-type'
+    'main section:first-of-type', '#MainContent section:first-of-type',
+    'main > div:first-of-type', '#MainContent > div:first-of-type'
   ];
 
   let $hero = null;
@@ -181,10 +198,11 @@ export async function analyzeStorefront(shopDomain) {
   }
 
   const heroHeadline = h1Elements[0] || ($hero ? $hero.find('h1, h2, .banner__heading, [class*="heading"]').first().text().trim() : '');
+  const heroSubhead = $hero ? $hero.find('p, [class*="subheading"], [class*="caption"], .banner__text').first().text().trim() : '';
   const heroText = $hero ? $hero.text().trim() : '';
 
   if (!$hero || heroText.length < 20) {
-    heroScore -= 12;
+    heroScore -= 15;
     heroFinding.push({
       title: 'Weak or Missing Hero Section',
       category: 'HERO_AND_CTA',
@@ -193,16 +211,52 @@ export async function analyzeStorefront(shopDomain) {
       whyItMatters: 'Visitors decide within 3 seconds whether to stay on your store. Without an engaging hero section, bounce rate on ad traffic skyrockets.',
       recommendation: 'Add an engaging Hero or Image Banner section at the top of your homepage in the Shopify Theme Editor.',
     });
-  } else if (!heroHeadline || heroHeadline.length < 5) {
-    heroScore -= 8;
-    heroFinding.push({
-      title: 'Unclear Hero Value Proposition',
-      category: 'HERO_AND_CTA',
-      severity: 'HIGH',
-      detected: 'The hero section does not present a clear, prominent headline explaining what makes your store unique.',
-      whyItMatters: 'Without a clear value proposition, shoppers do not immediately grasp what you sell or why they should trust your brand.',
-      recommendation: 'Add a bold headline in your hero banner that states your core product promise or primary value proposition.',
-    });
+  } else {
+    // 2.1 Headline Quality Check (Max 8 pts)
+    if (!heroHeadline || heroHeadline.length < 5) {
+      heroScore -= 8;
+      heroFinding.push({
+        title: 'Unclear or Missing Hero Headline',
+        category: 'HERO_AND_CTA',
+        severity: 'HIGH',
+        detected: 'The hero section does not present a clear, prominent headline explaining what your store offers.',
+        whyItMatters: 'Without a prominent headline, shoppers do not immediately grasp your primary product category or store identity.',
+        recommendation: 'Add a bold headline in your hero banner that states your core product promise or primary value proposition.',
+      });
+    }
+
+    // 2.2 Supporting Value Proposition Copy Check (Max 7 pts)
+    if (!heroSubhead || heroSubhead.length < 15) {
+      heroScore -= 5;
+      heroFinding.push({
+        title: 'Hero Lacks Supporting Value Proposition Copy',
+        category: 'HERO_AND_CTA',
+        severity: 'MEDIUM',
+        detected: `Hero displays a headline ("${heroHeadline || 'Headline'}") but lacks supporting copy explaining brand benefits or product value.`,
+        whyItMatters: 'A headline alone announces a category, but supporting copy explains why shoppers should choose your store over competitors.',
+        recommendation: 'Add 1-2 supporting sentences beneath your hero headline highlighting customer benefits (e.g., quality craftsmanship, warranty, or brand guarantee).',
+      });
+    }
+
+    // 2.3 Customer Benefit / Commercial Differentiation Check (Max 5 pts)
+    const benefitKeywords = [
+      'guarantee', 'warranty', 'crafted', 'premium', 'quality', 'sustainable',
+      'handcrafted', 'exclusive', 'free shipping', 'curated', 'authentic',
+      'designed', 'comfort', 'luxury', 'engineered', 'satisfaction', 'satisfy',
+      'durable', 'handmade', 'money back', 'secure'
+    ];
+    const hasBenefitSignal = benefitKeywords.some(kw => heroText.toLowerCase().includes(kw));
+    if (!hasBenefitSignal) {
+      heroScore -= 3;
+      heroFinding.push({
+        title: 'Hero Copy Lacks Clear Customer Benefit',
+        category: 'HERO_AND_CTA',
+        severity: 'LOW',
+        detected: `Hero copy states product presence ("${heroHeadline || 'Collection'}") but does not communicate clear customer benefits or store differentiation.`,
+        whyItMatters: 'Stating a tangible customer benefit in the hero section builds instant purchase intent and reduces immediate bounce from ad traffic.',
+        recommendation: 'Refine your hero copy to highlight a specific value proposition or customer benefit (e.g., "Premium quality apparel crafted for timeless comfort").',
+      });
+    }
   }
 
   heroScore = Math.max(0, heroScore);
@@ -276,30 +330,52 @@ export async function analyzeStorefront(shopDomain) {
   // 4. NAVIGATION & STORE STRUCTURE
   // ─────────────────────────────────────────────────────────────────────────────
   const navFindings = [];
-  const navLinks = $('header nav a, header [role="navigation"] a, nav.header__inline-menu a')
-    .map((_, el) => $(el).text().trim())
-    .get()
-    .filter(t => t.length > 0 && t.length < 35);
-  
-  const uniqueNavLinks = Array.from(new Set(navLinks));
+  let topNavLinks = [];
+
+  // Specifically target primary desktop navigation containers, excluding mobile drawers
+  const desktopNavContainers = $('header nav.header__inline-menu, header nav:not([class*="drawer"]):not([class*="mobile"]), header [role="navigation"]:not([class*="drawer"]):not([class*="mobile"])');
+
+  if (desktopNavContainers.length > 0) {
+    const $primaryNav = $(desktopNavContainers[0]);
+    const topLis = $primaryNav.find('> ul > li, > ol > li, > div > ul > li');
+    if (topLis.length > 0) {
+      topLis.each((_, li) => {
+        const text = $(li).children('summary, a, button, span').first().text().trim() ||
+                     $(li).find('.header__menu-item').first().text().trim();
+        if (text && text.length < 40) {
+          topNavLinks.push(text);
+        }
+      });
+    }
+  }
+
+  // Fallback for flat navigation structures
+  if (topNavLinks.length === 0) {
+    $('header nav:not([class*="drawer"]):not([class*="mobile"]) > a, header [role="navigation"]:not([class*="drawer"]):not([class*="mobile"]) > a').each((_, a) => {
+      const text = $(a).text().trim();
+      if (text && text.length < 40) topNavLinks.push(text);
+    });
+  }
+
+  topNavLinks = Array.from(new Set(topNavLinks));
   const hasSearch = $('form[action*="/search"], input[name="q"], [aria-label*="Search"], [class*="search"]').length > 0;
   const hasCart = $('a[href*="/cart"], [class*="cart"], [aria-label*="Cart"]').length > 0;
 
-  if (uniqueNavLinks.length < 2) {
+  if (topNavLinks.length < 2) {
     navFindings.push({
       title: 'Minimal or Missing Header Navigation',
       category: 'VISUAL_PROFESSIONALISM',
       severity: 'HIGH',
-      detected: `Only ${uniqueNavLinks.length} navigation link(s) detected in the store header.`,
+      detected: `Only ${topNavLinks.length} visible top-level navigation item(s) detected in the store header.`,
       whyItMatters: 'Shoppers need clear navigational routes to browse catalog categories. Sparse menus make the store appear unbuilt.',
       recommendation: 'In Online Store > Navigation, assign a comprehensive Main Menu with links to key collections, About Us, and Contact.',
     });
-  } else if (uniqueNavLinks.length > 8) {
+  } else if (topNavLinks.length > 8) {
     navFindings.push({
       title: 'Cluttered Header Navigation',
       category: 'VISUAL_PROFESSIONALISM',
       severity: 'LOW',
-      detected: `Header contains ${uniqueNavLinks.length} top-level links, which may cause wrapping or clutter on standard screens.`,
+      detected: `Header contains ${topNavLinks.length} visible top-level links (${topNavLinks.slice(0, 5).join(', ')}...), which may cause wrapping or clutter on standard screens.`,
       whyItMatters: 'Too many top-level menu items cause decision fatigue and can wrap awkwardly on smaller laptops.',
       recommendation: 'Consolidate secondary links into dropdown submenus to maintain a clean top-level menu (5-7 links optimal).',
     });
@@ -391,6 +467,23 @@ export async function analyzeStorefront(shopDomain) {
     });
   }
 
+  // Check for visible theme code / Liquid errors
+  const liquidErrorRegex = /Liquid error(?: \([^)]+\))?: [^<>\n]+/gi;
+  const rawLiquidErrors = html.match(liquidErrorRegex) || [];
+  const uniqueLiquidErrors = Array.from(new Set(rawLiquidErrors.map(e => e.trim())));
+
+  if (uniqueLiquidErrors.length > 0) {
+    trustScore -= 10;
+    trustFindings.push({
+      title: 'Visible Theme Code / Liquid Errors Detected',
+      category: 'TRUST_SIGNALS',
+      severity: 'CRITICAL',
+      detected: `Found ${uniqueLiquidErrors.length} visible Liquid template error(s) on the live storefront: "${uniqueLiquidErrors.slice(0, 3).join('", "')}".`,
+      whyItMatters: 'Visible Liquid errors occur when theme code references missing snippets, corrupted assets, or invalid calculations. Seeing raw code errors immediately destroys customer trust and signals an unmaintained or insecure storefront.',
+      recommendation: 'Open your Shopify Theme code editor and repair or remove the missing snippet calls or math errors at the indicated theme lines.',
+    });
+  }
+
   trustScore = Math.max(0, trustScore);
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -430,7 +523,7 @@ export async function analyzeStorefront(shopDomain) {
   socialProofScore = Math.max(0, socialProofScore);
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // 7. AESTHETICS & TYPOGRAPHY CONSISTENCY
+  // 7. AESTHETICS, SECTION FLOW & TYPOGRAPHY CONSISTENCY
   // ─────────────────────────────────────────────────────────────────────────────
   const aestheticFindings = [];
   
@@ -458,21 +551,96 @@ export async function analyzeStorefront(shopDomain) {
     });
   }
 
-  // Check for placeholder theme demo text
-  const placeholderPhrases = [
+  // Tiered Placeholder Detection: Critical demo text vs. Medium generic copy
+  const criticalPlaceholders = [
     'lorem ipsum', 'talk about your brand', 'share information about your brand',
-    'heading goes here', 'subheading goes here', 'welcome to our store'
-  ];
+    'heading goes here', 'subheading goes here', 'add your own text here'
+  ].filter(p => htmlLower.includes(p));
 
-  const detectedPlaceholders = placeholderPhrases.filter(p => htmlLower.includes(p));
-  if (detectedPlaceholders.length > 0) {
+  const genericCopyPhrases = [
+    'welcome to our store', 'welcome to my store'
+  ].filter(p => htmlLower.includes(p));
+
+  if (criticalPlaceholders.length > 0) {
     aestheticFindings.push({
-      title: 'Theme Placeholder Copy Detected',
+      title: 'Theme Demo Placeholder Copy Detected',
       category: 'VISUAL_PROFESSIONALISM',
       severity: 'CRITICAL',
-      detected: `Found default theme template text on the live homepage: "${detectedPlaceholders.join('", "')}".`,
-      whyItMatters: 'Unedited theme placeholder text immediately marks a store as incomplete or amateur, destroying buyer confidence.',
+      detected: `Found unedited theme demo placeholder text on the live homepage: "${criticalPlaceholders.join('", "')}".`,
+      whyItMatters: 'Unedited demo template text immediately marks a store as incomplete or amateur, destroying buyer confidence.',
       recommendation: 'Replace all template placeholder text with your actual brand storytelling and product highlights.',
+    });
+  }
+
+  if (genericCopyPhrases.length > 0) {
+    aestheticFindings.push({
+      title: 'Generic Announcement / Header Copy Detected',
+      category: 'VISUAL_PROFESSIONALISM',
+      severity: 'MEDIUM',
+      detected: `Found generic default text: "${genericCopyPhrases.join('", "')}" in the announcement bar or header.`,
+      whyItMatters: 'Announcement bars are prime above-the-fold real estate. Generic greeting copy underutilizes valuable space that could communicate conversion incentives like free shipping thresholds, discount codes, or satisfaction guarantees.',
+      recommendation: 'Update your announcement bar in the Theme Editor with a clear customer incentive (e.g., "Free Shipping on Orders Over $50" or "Sign Up for 10% Off").',
+    });
+  }
+
+  // Section Flow & Layout Repetition Analyzer
+  const sections = [];
+  $('main > div, main > section, #MainContent > div, #MainContent > section, [id*="shopify-section-template-"]').each((_, el) => {
+    const id = $(el).attr('id') || '';
+    const cls = $(el).attr('class') || '';
+    const heading = $(el).find('h1, h2, h3').first().text().trim();
+    
+    let type = 'other';
+    const idAndCls = (id + ' ' + cls).toLowerCase();
+    if (idAndCls.includes('featured_collection') || idAndCls.includes('featured-collection') || idAndCls.includes('collection-list') || idAndCls.includes('product-grid')) {
+      type = 'featured_collection';
+    } else if (idAndCls.includes('banner') || idAndCls.includes('hero') || idAndCls.includes('slideshow')) {
+      type = 'hero_banner';
+    } else if (idAndCls.includes('rich_text') || idAndCls.includes('rich-text')) {
+      type = 'rich_text';
+    } else if (idAndCls.includes('testimonial') || idAndCls.includes('review')) {
+      type = 'testimonial';
+    } else if (idAndCls.includes('featured_product') || idAndCls.includes('featured-product')) {
+      type = 'featured_product';
+    }
+
+    if ($(el).text().trim().length > 30) {
+      sections.push({ id, type, heading });
+    }
+  });
+
+  let maxConsecutiveCollections = 0;
+  let currentConsecutive = 0;
+  sections.forEach(s => {
+    if (s.type === 'featured_collection') {
+      currentConsecutive++;
+      if (currentConsecutive > maxConsecutiveCollections) {
+        maxConsecutiveCollections = currentConsecutive;
+      }
+    } else {
+      currentConsecutive = 0;
+    }
+  });
+
+  if (maxConsecutiveCollections >= 4) {
+    aestheticFindings.push({
+      title: 'Repetitive Homepage Section Layout',
+      category: 'VISUAL_PROFESSIONALISM',
+      severity: 'MEDIUM',
+      detected: `Detected ${maxConsecutiveCollections} consecutive product collection grids without visual breaks or contrasting content blocks.`,
+      whyItMatters: 'Stacking multiple collection grids consecutively creates visual monotony and scroll fatigue. Shoppers lose focus, and product hierarchy is diluted before reaching key trust signals or reviews.',
+      recommendation: 'Break up consecutive product grids with visual dividers, promotional banners, lifestyle imagery, brand storytelling, or tabbed collection displays.',
+    });
+  }
+
+  if (sections.length > 14) {
+    aestheticFindings.push({
+      title: 'Excessive Homepage Length & Scroll Depth',
+      category: 'VISUAL_PROFESSIONALISM',
+      severity: 'LOW',
+      detected: `Homepage contains ${sections.length} stacked sections, creating an exceptionally deep page scroll.`,
+      whyItMatters: 'Extremely long homepages slow down mobile rendering and lead to steep drop-offs before visitors reach testimonials, value propositions, or policy links.',
+      recommendation: 'Curate your homepage to 6-10 high-impact sections, moving secondary product categories into main navigation menus.',
     });
   }
 
@@ -500,16 +668,34 @@ export async function analyzeStorefront(shopDomain) {
     });
   }
 
+  // Transparent scoring: Overall score equals the exact mathematical sum of visible category scores (100 Max)
+  trustScore = Math.max(0, trustScore);
+  heroScore = Math.max(0, heroScore);
+  ctaScore = Math.max(0, ctaScore);
+  seoScore = Math.max(0, seoScore);
+  socialProofScore = Math.max(0, socialProofScore);
+
   const totalScore = Math.max(10, Math.min(100, Math.round(
-    seoScore + heroScore + ctaScore + trustScore + socialProofScore + (navFindings.length === 0 ? 5 : 2)
+    seoScore + heroScore + ctaScore + trustScore + socialProofScore
   )));
+
+  const criticalCount = allFindings.filter(f => f.severity === 'CRITICAL').length;
+  const highCount = allFindings.filter(f => f.severity === 'HIGH').length;
 
   let overallVerdict = 'Needs Optimization';
   let verdictBadge = 'warning';
-  if (totalScore >= 80 && !isPasswordProtected) {
+
+  // Strict Severity Gating: Genuinely Critical issues prevent "Professional & High Trust"
+  if (isPasswordProtected) {
+    overallVerdict = 'Store Locked (Password Active)';
+    verdictBadge = 'critical';
+  } else if (criticalCount > 0) {
+    overallVerdict = 'Needs Attention: Critical Issues Detected';
+    verdictBadge = 'critical';
+  } else if (totalScore >= 80 && highCount <= 1) {
     overallVerdict = 'Professional & High Trust';
     verdictBadge = 'success';
-  } else if (totalScore >= 60 && !isPasswordProtected) {
+  } else if (totalScore >= 60) {
     overallVerdict = 'Moderate Trust (Fixable Friction)';
     verdictBadge = 'attention';
   } else {
@@ -548,12 +734,23 @@ export async function analyzeStorefront(shopDomain) {
       paymentIconsVisible: hasPaymentBadges,
       socialProofDetected: Boolean(detectedReviewApp || hasTestimonials),
       reviewApp: detectedReviewApp || null,
+      liquidErrorsDetected: uniqueLiquidErrors.length > 0,
+      liquidErrors: uniqueLiquidErrors,
     },
     heroSnapshot: {
       headlineDetected: Boolean(heroHeadline),
       headlineText: heroHeadline || null,
       primaryCtaDetected: ctaButtons.length > 0,
       primaryCtaText: ctaButtons[0]?.text || null,
+      hasSupportingCopy: Boolean(heroSubhead && heroSubhead.length >= 15),
+    },
+    navigationSnapshot: {
+      topLevelLinksCount: topNavLinks.length,
+      links: topNavLinks,
+    },
+    layoutSnapshot: {
+      totalSections: sections.length,
+      consecutiveCollectionGrids: maxConsecutiveCollections,
     },
     findingsCount: allFindings.length,
     criticalCount: allFindings.filter(f => f.severity === 'CRITICAL').length,

@@ -1030,7 +1030,7 @@ export default function Dashboard() {
                       </span>
                     </div>
                     <p style={{ fontSize: "13px", color: colors.textSecondary, margin: 0 }}>
-                      Live customer-facing storefront analysis of your homepage evaluating value proposition, CTA visibility, trust policies, and SEO fundamentals.
+                      Live customer-facing storefront analysis evaluating hero value proposition, visual layout rhythm, trust signals, CTA clarity, and SEO fundamentals.
                     </p>
                   </div>
 
@@ -1052,7 +1052,9 @@ export default function Dashboard() {
                       {data.storefrontAudit.scoresBreakdown?.heroAndValueProp?.score ?? 0} / 25
                     </div>
                     <div style={{ fontSize: "11px", color: colors.textSecondary, marginTop: "2px" }}>
-                      {data.storefrontAudit.heroSnapshot?.headlineDetected ? "Headline detected" : "Headline missing"}
+                      {data.storefrontAudit.heroSnapshot?.headlineDetected
+                        ? (data.storefrontAudit.heroSnapshot?.hasSupportingCopy ? "Headline & value prop OK" : "Needs supporting copy")
+                        : "Headline missing"}
                     </div>
                   </div>
 
@@ -1071,8 +1073,10 @@ export default function Dashboard() {
                     <div style={{ fontSize: "16px", fontWeight: 700, color: colors.textPrimary }}>
                       {data.storefrontAudit.scoresBreakdown?.trustAndPolicies?.score ?? 0} / 25
                     </div>
-                    <div style={{ fontSize: "11px", color: colors.textSecondary, marginTop: "2px" }}>
-                      {data.storefrontAudit.trustSnapshot?.refundPolicy && data.storefrontAudit.trustSnapshot?.shippingPolicy ? "Refund & Shipping OK" : "Policies missing"}
+                    <div style={{ fontSize: "11px", color: data.storefrontAudit.trustSnapshot?.liquidErrorsDetected ? colors.critical : colors.textSecondary, marginTop: "2px", fontWeight: data.storefrontAudit.trustSnapshot?.liquidErrorsDetected ? 600 : 400 }}>
+                      {data.storefrontAudit.trustSnapshot?.liquidErrorsDetected
+                        ? "Visible code errors"
+                        : (data.storefrontAudit.trustSnapshot?.refundPolicy && data.storefrontAudit.trustSnapshot?.shippingPolicy ? "Refund & Shipping OK" : "Policies missing")}
                     </div>
                   </div>
 
